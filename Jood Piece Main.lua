@@ -221,11 +221,14 @@ end
 -- ================================================
 -- SECTION 3: CONFIG SYSTEM
 -- ================================================
-local ConfigFolder = "SJW_Configs"
+local HubFolder    = "LazyHub"
+local GameName     = "Jood Piece"
+local ConfigFolder = HubFolder.."/"..GameName
 local ConfigFile   = ConfigFolder.."/configs.json"
 
 local function saveConfigToFile()
     pcall(function()
+        if not isfolder(HubFolder) then makefolder(HubFolder) end
         if not isfolder(ConfigFolder) then makefolder(ConfigFolder) end
         writefile(ConfigFile, HttpService:JSONEncode({
             configs  = savedConfigs,
