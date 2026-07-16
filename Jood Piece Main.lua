@@ -9,7 +9,7 @@ local TeleportService = game:GetService("TeleportService")
 -- SECTION 1: VARIABLES
 -- ================================================
 local autofarmEnabled    = false
-local selectedBoss       = "none"
+local selectedBoss       = "None"
 local followMode         = "behind"
 local followDistance     = 5
 local attackRange        = 12
@@ -406,8 +406,8 @@ end
 -- ================================================
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 local Window = Rayfield:CreateWindow({
-    Name="SJW Premium V19", LoadingTitle="Loading...",
-    LoadingSubtitle="by SJW Team",
+    Name="LazyHub~Jood Piece", LoadingTitle="Loading...",
+    LoadingSubtitle="by LazyHub",
     ConfigurationSaving={Enabled=false},
     Discord={Enabled=false}, KeySystem=false
 })
