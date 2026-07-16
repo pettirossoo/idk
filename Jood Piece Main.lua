@@ -1,4 +1,3 @@
--- // AutoFarm SJW - PREMIUM MOBILE V19 (QOL UPDATED - DYNAMIC INVENTORY PROTECTION - HOP LOGIC UPDATED) //
 local Players       = game:GetService("Players")
 local RunService    = game:GetService("RunService")
 local VirtualUser   = game:GetService("VirtualUser")
