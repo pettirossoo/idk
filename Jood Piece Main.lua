@@ -46,6 +46,7 @@ local alreadyAtEventIsland  = false
 
 local islandFarmEnabled      = false
 local selectedIslandMob      = nil
+local selectedIslandMobCoordinates = nil
 local islandAutoEquipTool    = nil
 local islandAutoEquip        = false
 local islandSkillZ           = false
@@ -301,6 +302,7 @@ local function getCurrentSettings()
         oceanHopRegularSkillF = oceanHopRegularSkillF ~= nil and oceanHopRegularSkillF or false,
         islandFarmEnabled     = islandFarmEnabled or false,
         selectedIslandMob     = selectedIslandMob,
+        selectedIslandMobCoordinates = selectedIslandMobCoordinates,
         islandAutoEquipTool   = islandAutoEquipTool,
         islandAutoEquip       = islandAutoEquip or false,
         islandSkillZ          = islandSkillZ ~= nil and islandSkillZ or false,
@@ -367,7 +369,8 @@ local function applyVariables(s)
     oceanHopRegularSkillF = s.oceanHopRegularSkillF ~= nil and s.oceanHopRegularSkillF or false
     islandFarmEnabled     = s.islandFarmEnabled or false
     selectedIslandMob     = s.selectedIslandMob
-    islandAutoEquipTool   = islandAutoEquipTool
+    selectedIslandMobCoordinates = s.selectedIslandMobCoordinates
+    islandAutoEquipTool   = s.islandAutoEquipTool
     islandAutoEquip       = s.islandAutoEquip or false
     islandSkillZ          = s.islandSkillZ ~= nil and s.islandSkillZ or false
     islandSkillX          = s.islandSkillX ~= nil and s.islandSkillX or false
@@ -1254,6 +1257,19 @@ local function useOceanHopRegularSkills()
     end)
 end
 
+local function useIslandSkills()
+    pcall(function()
+        local ui=LocalPlayer.PlayerGui:FindFirstChild("SkillUI")
+        if ui and ui:FindFirstChild("Mobile Button") then
+            if islandSkillZ and ui["Mobile Button"]:FindFirstChild("Z") then robustClick(ui["Mobile Button"]["Z"]); task.wait(0.05) end
+            if islandSkillX and ui["Mobile Button"]:FindFirstChild("X") then robustClick(ui["Mobile Button"]["X"]); task.wait(0.05) end
+            if islandSkillC and ui["Mobile Button"]:FindFirstChild("C") then robustClick(ui["Mobile Button"]["C"]); task.wait(0.05) end
+            if islandSkillV and ui["Mobile Button"]:FindFirstChild("V") then robustClick(ui["Mobile Button"]["V"]); task.wait(0.05) end
+            if islandSkillF and ui["Mobile Button"]:FindFirstChild("F") then robustClick(ui["Mobile Button"]["F"]); task.wait(0.05) end
+        end
+    end)
+end
+
 local function useSkillF()
     pcall(function()
         local ui=LocalPlayer.PlayerGui:FindFirstChild("SkillUI")
@@ -1428,10 +1444,21 @@ task.spawn(function()
             end)
             
             if foundMob then
+                -- Save mob coordinates
+                pcall(function()
+                    if foundMob:FindFirstChild("HumanoidRootPart") then
+                        selectedIslandMobCoordinates = foundMob.HumanoidRootPart.Position
+                    end
+                end)
+                
                 if islandAutoEquip and islandAutoEquipTool then
                     forceEquipTool(islandAutoEquipTool)
                 end
                 while foundMob and foundMob.Parent and islandFarmEnabled and selectedIslandMob == foundMob.Name and not mainFarmPaused and not STEPS_IN_PROGRESS do
+                    -- Re-equip tool if lost
+                    if islandAutoEquip and islandAutoEquipTool and not LocalPlayer.Character:FindFirstChild(islandAutoEquipTool) then
+                        forceEquipTool(islandAutoEquipTool)
+                    end
                     -- Position player near mob
                     pcall(function()
                         local hrp=LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -1448,6 +1475,14 @@ task.spawn(function()
                     useIslandSkills()
                     task.wait(0.2)
                 end
+            elseif selectedIslandMobCoordinates and islandFarmEnabled then
+                -- Mob not loaded, go to saved coordinates
+                pcall(function()
+                    local hrp=LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                    if hrp then
+                        hrp.CFrame=CFrame.new(selectedIslandMobCoordinates)
+                    end
+                end)
             end
         end
     end
@@ -1631,9 +1666,13 @@ task.spawn(function()
             end)
             if #mobs>0 then
                 mainFarmPaused=true
-                if oceanAutoEquipTool then forceEquipTool(oceanAutoEquipTool) end
+                if oceanAutoEquip and oceanAutoEquipTool then forceEquipTool(oceanAutoEquipTool) end
                 for _,mob in pairs(mobs) do
                     while mob and mob.Parent and oceanMobsEnabled and not STEPS_IN_PROGRESS do
+                        -- Re-equip tool if lost
+                        if oceanAutoEquip and oceanAutoEquipTool and not LocalPlayer.Character:FindFirstChild(oceanAutoEquipTool) then
+                            forceEquipTool(oceanAutoEquipTool)
+                        end
                         farmOceanMob(mob); task.wait(0.2)
                         if not workspace.Mobs.Ocean:FindFirstChild(mob.Name) then break end
                     end
@@ -1711,6 +1750,23 @@ LocalPlayer.CharacterAdded:Connect(function()
     task.wait(4)
     stepsCompleted=false; step2FActivated=false
     isExecutingSteps=false; STEPS_IN_PROGRESS=false
+    alreadyAtEventIsland=false
+    
+    -- Re-equip Ocean Farm tool if active
+    if oceanMobsEnabled and oceanAutoEquip and oceanAutoEquipTool then
+        forceEquipTool(oceanAutoEquipTool)
+    end
+    
+    -- Re-equip Island Farm tool if active
+    if islandFarmEnabled and islandAutoEquip and islandAutoEquipTool then
+        forceEquipTool(islandAutoEquipTool)
+    end
+    
+    -- Re-equip Event Farm tool if active
+    if eventIslandEnabled and eventAutoEquipTool then
+        forceEquipTool(eventAutoEquipTool)
+    end
+    
     if flyEnabled then task.wait(0.5); startFly() end
     if autofarmEnabled then task.wait(1); executeBossFarmSteps() end
 end)
