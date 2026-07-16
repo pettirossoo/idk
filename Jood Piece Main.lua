@@ -10,7 +10,7 @@ local TeleportService = game:GetService("TeleportService")
 -- SECTION 1: VARIABLES
 -- ================================================
 local autofarmEnabled    = false
-local selectedBoss       = "Sung Jinwoo"
+local selectedBoss       = "none"
 local followMode         = "behind"
 local followDistance     = 5
 local attackRange        = 12
