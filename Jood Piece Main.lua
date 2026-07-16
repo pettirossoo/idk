@@ -648,6 +648,15 @@ UI.OceanDD=OceanTab:CreateDropdown({
     Callback=function(o) oceanAutoEquipTool=o[1] end
 })
 
+OceanTab:CreateButton({Name="🔄 Refresh Tools", Callback=function()
+    if UI.OceanDD then UI.OceanDD:Refresh(getBackpackTools(), true) end
+end})
+
+UI.OceanAutoEquipToggle=OceanTab:CreateToggle({
+    Name="Auto Equip Tool", CurrentValue=oceanAutoEquip,
+    Callback=function(v) oceanAutoEquip=v end
+})
+
 OceanTab:CreateSection("Ocean Skills")
 UI.OceanSkillZ=OceanTab:CreateToggle({Name="Z",CurrentValue=oceanSkillZ,Callback=function(v) oceanSkillZ=v end})
 UI.OceanSkillX=OceanTab:CreateToggle({Name="X",CurrentValue=oceanSkillX,Callback=function(v) oceanSkillX=v end})
