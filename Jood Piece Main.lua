@@ -39,7 +39,7 @@ local step2Tool, step3Tool = nil, nil
 local step2FEnabled, step2FActivated  = false, false
 local stepsCompleted, isExecutingSteps, STEPS_IN_PROGRESS = false, false, false
 
-local oceanMobsEnabled, oceanAutoEquipTool = false, nil
+local oceanMobsEnabled, oceanAutoEquipTool, oceanAutoEquip = false, nil, false
 local mainFarmPaused                       = false
 local eventIslandEnabled, eventAutoEquipTool = false, nil
 local alreadyAtEventIsland  = false
@@ -261,6 +261,7 @@ local function getCurrentSettings()
         skillF                = skillF,
         oceanMobsEnabled      = oceanMobsEnabled,
         oceanAutoEquipTool    = oceanAutoEquipTool,
+        oceanAutoEquip        = oceanAutoEquip,
         oceanSkillZ           = oceanSkillZ,
         oceanSkillX           = oceanSkillX,
         oceanSkillC           = oceanSkillC,
@@ -330,6 +331,7 @@ local function applyVariables(s)
     skillF                = s.skillF ~= nil and s.skillF or false
     oceanMobsEnabled      = s.oceanMobsEnabled   or false
     oceanAutoEquipTool    = s.oceanAutoEquipTool
+    oceanAutoEquip        = s.oceanAutoEquip or false
     oceanSkillZ           = s.oceanSkillZ ~= nil and s.oceanSkillZ or false
     oceanSkillX           = s.oceanSkillX ~= nil and s.oceanSkillX or false
     oceanSkillC           = s.oceanSkillC ~= nil and s.oceanSkillC or false
@@ -1074,6 +1076,7 @@ function updateAllUI()
         
         if UI.AutoFarmToggle then UI.AutoFarmToggle:Set(autofarmEnabled) end
         if UI.OceanToggle then UI.OceanToggle:Set(oceanMobsEnabled) end
+        if UI.OceanAutoEquipToggle then UI.OceanAutoEquipToggle:Set(oceanAutoEquip) end
         if UI.EventToggle then UI.EventToggle:Set(eventIslandEnabled) end
         if UI.IslandFarmToggle then UI.IslandFarmToggle:Set(islandFarmEnabled) end
         if UI.IslandAutoEquipToggle then UI.IslandAutoEquipToggle:Set(islandAutoEquip) end
