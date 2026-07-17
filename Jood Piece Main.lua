@@ -4,6 +4,7 @@ local VirtualUser   = game:GetService("VirtualUser")
 local LocalPlayer   = Players.LocalPlayer
 local HttpService   = game:GetService("HttpService")
 local TeleportService = game:GetService("TeleportService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- ================================================
 -- SECTION 1: VARIABLES
@@ -94,49 +95,52 @@ local autoLoadConfigName = ""
 
 local UI = {}
 
--- ========== RAID SYSTEM VARIABLES ==========
-local NORMAL_SERVER_ID = 110029522258215
-local RAID_SERVER_ID   = 123886389200671
-local raidTicketMap = {
-    Normal = "Raid Ticket",
-    Rush   = "Rush Ticket",
-    Castle = "Castle Ticket",
-}
-local CAVE_ORE_NAME = "Diamond Ore"
+-- ================================================
+-- RAID VARIABLES
+-- ================================================
+local NORMAL_SERVER_PLACE_ID = 110029522258215
+local RAID_SERVER_PLACE_ID = 123886389200671
 
--- Tracks which raid category currently owns the "Inside Raid" logic,
--- cosi Standard (Normal/Rush/Castle) e Cave non si scontrano nello stesso Raid Server
-local activeRaidCategory = nil -- nil | "Standard" | "Cave"
-
--- Raid Tab (Normal/Rush/Castle - tab condivisa)
-local raidCreateEnabled   = false
-local selectedRaidType    = "Normal" -- "Normal" | "Rush" | "Castle"
-local raidStartEnabled    = false
+-- Normal/Rush/Castle Raid (Shared Tab)
+local raidCreateEnabled = false
+local selectedRaidType = "Normal Raid"
+local raidStartEnabled = false
 local raidAutoSkipEnabled = false
-local raidReplayEnabled   = false
-local raidTool            = nil
-local raidAutoEquip       = false
-local raidSkillZ, raidSkillX, raidSkillC, raidSkillV, raidSkillF = false,false,false,false,false
-local raidCircleReached   = false
+local raidReplayEnabled = false
+local raidTool = nil
+local raidAutoEquip = false
+local raidSkillZ = false
+local raidSkillX = false
+local raidSkillC = false
+local raidSkillV = false
+local raidSkillF = false
+local normalRaidShopItems = {}
+local normalRaidShopAutoBuy = false
+local rushRaidShopItems = {}
+local rushRaidShopAutoBuy = false
+local castleRaidShopItems = {}
+local castleRaidShopAutoBuy = false
 
-local normalShopItems, normalShopEnabled = {}, false
-local rushShopItems,   rushShopEnabled   = {}, false
-local castleShopItems, castleShopEnabled = {}, false
-
--- Cave Raid Tab
-local caveDiamondFarmEnabled = false
-local caveDiamondTool        = nil
-local caveDiamondAutoEquip   = false
-
-local caveRaidCreateEnabled   = false
-local caveRaidStartEnabled    = false
+-- Cave Raid
+local caveDiamondOreFarmEnabled = false
+local caveSuperPickaxeTool = nil
+local caveSuperPickaxeAutoEquip = false
+local caveRaidCreateEnabled = false
+local caveRaidStartEnabled = false
 local caveRaidAutoSkipEnabled = false
-local caveRaidReplayEnabled   = false
-local caveRaidTool            = nil
-local caveRaidAutoEquip       = false
-local caveRaidSkillZ, caveRaidSkillX, caveRaidSkillC, caveRaidSkillV, caveRaidSkillF = false,false,false,false,false
-local caveShopItems, caveShopEnabled = {}, false
-local caveCircleReached = false
+local caveRaidReplayEnabled = false
+local caveRaidTool = nil
+local caveRaidAutoEquip = false
+local caveRaidSkillZ = false
+local caveRaidSkillX = false
+local caveRaidSkillC = false
+local caveRaidSkillV = false
+local caveRaidSkillF = false
+local caveRaidShopItems = {}
+local caveRaidShopAutoBuy = false
+
+-- Raid extraction tracking
+local raidExtractionInProgress = false
 
 -- ================================================
 -- SECTION 2: HELPER FUNCTIONS
@@ -231,28 +235,12 @@ local function getMerchantItems()
     return #items>0 and items or {"No items"}
 end
 
-local function getRaidShopItems(shopName)
-    local items = {}
-    pcall(function()
-        local g = LocalPlayer.PlayerGui:FindFirstChild("MainGui")
-        if g and g:FindFirstChild(shopName) and g[shopName]:FindFirstChild("Main") then
-            for _,c in pairs(g[shopName].Main:GetChildren()) do
-                if c:IsA("ImageButton") then
-                    table.insert(items, c.Name)
-                end
-            end
-        end
-    end)
-    return #items>0 and items or {"No items"}
-end
-
 local function getIslandMobs()
     local mobs = {}
     pcall(function()
         if workspace:FindFirstChild("Mobs") then
             local mobsFolder = workspace.Mobs
             for _, islandFolder in pairs(mobsFolder:GetChildren()) do
-                -- Skip Ocean since it has its own tab
                 if islandFolder.Name == "Ocean" then continue end
                 if islandFolder:IsA("Folder") then
                     for _, mob in pairs(islandFolder:GetChildren()) do
@@ -264,7 +252,6 @@ local function getIslandMobs()
             end
         end
     end)
-    -- Remove duplicates
     local uniqueMobs = {}
     local seen = {}
     for _, mobName in pairs(mobs) do
@@ -274,6 +261,50 @@ local function getIslandMobs()
         end
     end
     return #uniqueMobs > 0 and uniqueMobs or {"No mobs"}
+end
+
+-- ================================================
+-- RAID HELPER FUNCTIONS
+-- ================================================
+local function isInRaidServer()
+    return game.PlaceId == RAID_SERVER_PLACE_ID
+end
+
+local function isInNormalServer()
+    return game.PlaceId == NORMAL_SERVER_PLACE_ID
+end
+
+local function getRaidShopItems(shopName)
+    local items = {}
+    pcall(function()
+        local g = LocalPlayer.PlayerGui:FindFirstChild("MainGui")
+        if not g then return end
+        local shop = g:FindFirstChild(shopName)
+        if shop and shop:FindFirstChild("Main") then
+            for _,c in pairs(shop.Main:GetChildren()) do
+                if c:IsA("ImageButton") and c.Name ~= "UIGridLayout" and c.Name ~= "UIPadding" then
+                    table.insert(items, c.Name)
+                end
+            end
+        end
+    end)
+    return #items > 0 and items or {"No items"}
+end
+
+local function getNormalRaidShopItems()
+    return getRaidShopItems("RAIDSHOP")
+end
+
+local function getRushRaidShopItems()
+    return getRaidShopItems("RUSHSHOP")
+end
+
+local function getCastleRaidShopItems()
+    return getRaidShopItems("CASTLESHOP")
+end
+
+local function getCaveRaidShopItems()
+    return getRaidShopItems("CAVESHOP")
 end
 
 -- ================================================
@@ -372,8 +403,9 @@ local function getCurrentSettings()
         islandSkillC          = islandSkillC ~= nil and islandSkillC or false,
         islandSkillV          = islandSkillV ~= nil and islandSkillV or false,
         islandSkillF          = islandSkillF ~= nil and islandSkillF or false,
+        -- Raid variables
         raidCreateEnabled     = raidCreateEnabled or false,
-        selectedRaidType      = selectedRaidType,
+        selectedRaidType      = selectedRaidType or "Normal Raid",
         raidStartEnabled      = raidStartEnabled or false,
         raidAutoSkipEnabled   = raidAutoSkipEnabled or false,
         raidReplayEnabled     = raidReplayEnabled or false,
@@ -384,28 +416,29 @@ local function getCurrentSettings()
         raidSkillC            = raidSkillC ~= nil and raidSkillC or false,
         raidSkillV            = raidSkillV ~= nil and raidSkillV or false,
         raidSkillF            = raidSkillF ~= nil and raidSkillF or false,
-        normalShopItems       = normalShopItems or {},
-        normalShopEnabled     = normalShopEnabled or false,
-        rushShopItems         = rushShopItems or {},
-        rushShopEnabled       = rushShopEnabled or false,
-        castleShopItems       = castleShopItems or {},
-        castleShopEnabled     = castleShopEnabled or false,
-        caveDiamondFarmEnabled = caveDiamondFarmEnabled or false,
-        caveDiamondTool        = caveDiamondTool,
-        caveDiamondAutoEquip   = caveDiamondAutoEquip or false,
-        caveRaidCreateEnabled  = caveRaidCreateEnabled or false,
-        caveRaidStartEnabled   = caveRaidStartEnabled or false,
-        caveRaidAutoSkipEnabled= caveRaidAutoSkipEnabled or false,
-        caveRaidReplayEnabled  = caveRaidReplayEnabled or false,
-        caveRaidTool           = caveRaidTool,
-        caveRaidAutoEquip      = caveRaidAutoEquip or false,
-        caveRaidSkillZ         = caveRaidSkillZ ~= nil and caveRaidSkillZ or false,
-        caveRaidSkillX         = caveRaidSkillX ~= nil and caveRaidSkillX or false,
-        caveRaidSkillC         = caveRaidSkillC ~= nil and caveRaidSkillC or false,
-        caveRaidSkillV         = caveRaidSkillV ~= nil and caveRaidSkillV or false,
-        caveRaidSkillF         = caveRaidSkillF ~= nil and caveRaidSkillF or false,
-        caveShopItems          = caveShopItems or {},
-        caveShopEnabled        = caveShopEnabled or false,
+        normalRaidShopItems   = normalRaidShopItems or {},
+        normalRaidShopAutoBuy = normalRaidShopAutoBuy or false,
+        rushRaidShopItems     = rushRaidShopItems or {},
+        rushRaidShopAutoBuy   = rushRaidShopAutoBuy or false,
+        castleRaidShopItems   = castleRaidShopItems or {},
+        castleRaidShopAutoBuy = castleRaidShopAutoBuy or false,
+        -- Cave Raid variables
+        caveDiamondOreFarmEnabled = caveDiamondOreFarmEnabled or false,
+        caveSuperPickaxeTool  = caveSuperPickaxeTool,
+        caveSuperPickaxeAutoEquip = caveSuperPickaxeAutoEquip or false,
+        caveRaidCreateEnabled = caveRaidCreateEnabled or false,
+        caveRaidStartEnabled  = caveRaidStartEnabled or false,
+        caveRaidAutoSkipEnabled = caveRaidAutoSkipEnabled or false,
+        caveRaidReplayEnabled = caveRaidReplayEnabled or false,
+        caveRaidTool          = caveRaidTool,
+        caveRaidAutoEquip     = caveRaidAutoEquip or false,
+        caveRaidSkillZ        = caveRaidSkillZ ~= nil and caveRaidSkillZ or false,
+        caveRaidSkillX        = caveRaidSkillX ~= nil and caveRaidSkillX or false,
+        caveRaidSkillC        = caveRaidSkillC ~= nil and caveRaidSkillC or false,
+        caveRaidSkillV        = caveRaidSkillV ~= nil and caveRaidSkillV or false,
+        caveRaidSkillF        = caveRaidSkillF ~= nil and caveRaidSkillF or false,
+        caveRaidShopItems     = caveRaidShopItems or {},
+        caveRaidShopAutoBuy   = caveRaidShopAutoBuy or false,
     }
 end
 
@@ -474,8 +507,9 @@ local function applyVariables(s)
     islandSkillC          = s.islandSkillC ~= nil and s.islandSkillC or false
     islandSkillV          = s.islandSkillV ~= nil and s.islandSkillV or false
     islandSkillF          = s.islandSkillF ~= nil and s.islandSkillF or false
+    -- Raid variables
     raidCreateEnabled     = s.raidCreateEnabled or false
-    selectedRaidType      = s.selectedRaidType or "Normal"
+    selectedRaidType      = s.selectedRaidType or "Normal Raid"
     raidStartEnabled      = s.raidStartEnabled or false
     raidAutoSkipEnabled   = s.raidAutoSkipEnabled or false
     raidReplayEnabled     = s.raidReplayEnabled or false
@@ -486,32 +520,29 @@ local function applyVariables(s)
     raidSkillC            = s.raidSkillC ~= nil and s.raidSkillC or false
     raidSkillV            = s.raidSkillV ~= nil and s.raidSkillV or false
     raidSkillF            = s.raidSkillF ~= nil and s.raidSkillF or false
-    normalShopItems       = s.normalShopItems or {}
-    normalShopEnabled     = s.normalShopEnabled or false
-    rushShopItems         = s.rushShopItems or {}
-    rushShopEnabled       = s.rushShopEnabled or false
-    castleShopItems       = s.castleShopItems or {}
-    castleShopEnabled     = s.castleShopEnabled or false
-    caveDiamondFarmEnabled = s.caveDiamondFarmEnabled or false
-    caveDiamondTool        = s.caveDiamondTool
-    caveDiamondAutoEquip   = s.caveDiamondAutoEquip or false
-    caveRaidCreateEnabled  = s.caveRaidCreateEnabled or false
-    caveRaidStartEnabled   = s.caveRaidStartEnabled or false
-    caveRaidAutoSkipEnabled= s.caveRaidAutoSkipEnabled or false
-    caveRaidReplayEnabled  = s.caveRaidReplayEnabled or false
-    caveRaidTool           = s.caveRaidTool
-    caveRaidAutoEquip      = s.caveRaidAutoEquip or false
-    caveRaidSkillZ         = s.caveRaidSkillZ ~= nil and s.caveRaidSkillZ or false
-    caveRaidSkillX         = s.caveRaidSkillX ~= nil and s.caveRaidSkillX or false
-    caveRaidSkillC         = s.caveRaidSkillC ~= nil and s.caveRaidSkillC or false
-    caveRaidSkillV         = s.caveRaidSkillV ~= nil and s.caveRaidSkillV or false
-    caveRaidSkillF         = s.caveRaidSkillF ~= nil and s.caveRaidSkillF or false
-    caveShopItems          = s.caveShopItems or {}
-    caveShopEnabled        = s.caveShopEnabled or false
-    -- Reset stati transitori legati al raid (non persistenti tra sessioni)
-    raidCircleReached     = false
-    caveCircleReached     = false
-    activeRaidCategory    = nil
+    normalRaidShopItems   = s.normalRaidShopItems or {}
+    normalRaidShopAutoBuy = s.normalRaidShopAutoBuy or false
+    rushRaidShopItems     = s.rushRaidShopItems or {}
+    rushRaidShopAutoBuy   = s.rushRaidShopAutoBuy or false
+    castleRaidShopItems   = s.castleRaidShopItems or {}
+    castleRaidShopAutoBuy = s.castleRaidShopAutoBuy or false
+    -- Cave Raid variables
+    caveDiamondOreFarmEnabled = s.caveDiamondOreFarmEnabled or false
+    caveSuperPickaxeTool  = s.caveSuperPickaxeTool
+    caveSuperPickaxeAutoEquip = s.caveSuperPickaxeAutoEquip or false
+    caveRaidCreateEnabled = s.caveRaidCreateEnabled or false
+    caveRaidStartEnabled  = s.caveRaidStartEnabled or false
+    caveRaidAutoSkipEnabled = s.caveRaidAutoSkipEnabled or false
+    caveRaidReplayEnabled = s.caveRaidReplayEnabled or false
+    caveRaidTool          = s.caveRaidTool
+    caveRaidAutoEquip     = s.caveRaidAutoEquip or false
+    caveRaidSkillZ        = s.caveRaidSkillZ ~= nil and s.caveRaidSkillZ or false
+    caveRaidSkillX        = s.caveRaidSkillX ~= nil and s.caveRaidSkillX or false
+    caveRaidSkillC        = s.caveRaidSkillC ~= nil and s.caveRaidSkillC or false
+    caveRaidSkillV        = s.caveRaidSkillV ~= nil and s.caveRaidSkillV or false
+    caveRaidSkillF        = s.caveRaidSkillF ~= nil and s.caveRaidSkillF or false
+    caveRaidShopItems     = s.caveRaidShopItems or {}
+    caveRaidShopAutoBuy   = s.caveRaidShopAutoBuy or false
     mainFarmPaused        = false
     print("✅ Variables applied")
 end
@@ -520,7 +551,7 @@ loadConfigFromFile()
 
 -- Refresh config dropdowns after loading from file
 task.spawn(function()
-    task.wait(2) -- Wait for Rayfield UI to be created
+    task.wait(2)
     if UI.ConfigDD then UI.ConfigDD:Refresh(getConfigNames(), true) end
     if UI.AutoLoadDD then UI.AutoLoadDD:Refresh(getAutoLoadOpts(), true) end
 end)
@@ -552,12 +583,12 @@ local BossTab   = Window:CreateTab("👹 Boss",      nil)
 local OceanTab  = Window:CreateTab("🌊 Ocean",     nil)
 local OceanHopTab = Window:CreateTab("🔄 Ocean-Hop", nil)
 local EventTab  = Window:CreateTab("🎪 Event",     nil)
+local RaidTab   = Window:CreateTab("🏰 Raid",      nil)
+local CaveRaidTab = Window:CreateTab("💎 Cave Raid", nil)
 local TitleTab  = Window:CreateTab("👑 Title",     nil)
 local GuarTab   = Window:CreateTab("🎁 Guarantee", nil)
 local MerchTab  = Window:CreateTab("🛒 Merchant",  nil)
 local InvTab    = Window:CreateTab("📦 Inventory", nil)
-local RaidTab     = Window:CreateTab("⚔️ Raid", nil)
-local CaveRaidTab = Window:CreateTab("⛏️ Cave Raid", nil)
 local MiscTab   = Window:CreateTab("⚙️ Misc",      nil)
 
 -- ================================================
@@ -617,8 +648,8 @@ ConfigTab:CreateButton({
             return
         end
         applyVariables(savedConfigs[currentConfigName])
-        task.wait(0.5) -- Wait for variables to apply
-        updateAllUI() -- Now update the UI
+        task.wait(0.5)
+        updateAllUI()
         Rayfield:Notify({Title="Loaded ✅", Content=currentConfigName, Duration=2})
     end,
 })
@@ -892,174 +923,198 @@ UI.EventSkillV=EventTab:CreateToggle({Name="V",CurrentValue=eventSkillV,Callback
 UI.EventSkillF=EventTab:CreateToggle({Name="F",CurrentValue=eventSkillF,Callback=function(v) eventSkillF=v end})
 
 -- ================================================
--- SECTION 8.5: RAID TAB (Normal / Rush / Castle)
+-- SECTION 8.5: RAID TAB (Normal/Rush/Castle Shared)
 -- ================================================
-RaidTab:CreateSection("Raid Creation")
+RaidTab:CreateSection("🎫 Raid Creation")
+
+UI.RaidCreateToggle = RaidTab:CreateToggle({
+    Name="Create Raid", CurrentValue=raidCreateEnabled,
+    Callback=function(v) raidCreateEnabled=v end
+})
+
 UI.RaidTypeDD = RaidTab:CreateDropdown({
-    Name="Raid Type", Options={"Normal","Rush","Castle"},
+    Name="Raid Type",
+    Options={"Normal Raid", "Rush Raid", "Castle Raid"},
     CurrentOption={selectedRaidType},
     MultipleOptions=false,
     Callback=function(o) selectedRaidType=o[1] end
 })
-UI.RaidCreateToggle = RaidTab:CreateToggle({
-    Name="Create Raid", CurrentValue=raidCreateEnabled,
-    Callback=function(v) raidCreateEnabled=v; if not v then raidCircleReached=false end end
-})
 
-RaidTab:CreateSection("Inside Raid")
+RaidTab:CreateSection("⚔️ Inside Raid")
+
 UI.RaidStartToggle = RaidTab:CreateToggle({
-    Name="Start", CurrentValue=raidStartEnabled,
+    Name="Start Raid", CurrentValue=raidStartEnabled,
     Callback=function(v) raidStartEnabled=v end
 })
+
 UI.RaidAutoSkipToggle = RaidTab:CreateToggle({
-    Name="AutoSkip", CurrentValue=raidAutoSkipEnabled,
+    Name="Auto Skip", CurrentValue=raidAutoSkipEnabled,
     Callback=function(v) raidAutoSkipEnabled=v end
 })
+
 UI.RaidReplayToggle = RaidTab:CreateToggle({
-    Name="Replay", CurrentValue=raidReplayEnabled,
+    Name="Auto Replay", CurrentValue=raidReplayEnabled,
     Callback=function(v) raidReplayEnabled=v end
 })
+
+RaidTab:CreateSection("🔧 Raid Tool & Skills")
 
 RaidTab:CreateButton({Name="🔄 Refresh Tools", Callback=function()
     if UI.RaidToolDD then UI.RaidToolDD:Refresh(getBackpackTools(), true) end
 end})
+
 UI.RaidToolDD = RaidTab:CreateDropdown({
     Name="Tool", Options=getBackpackTools(),
     CurrentOption=raidTool and {raidTool} or {},
     MultipleOptions=false,
     Callback=function(o) raidTool=o[1] end
 })
+
 UI.RaidAutoEquipToggle = RaidTab:CreateToggle({
     Name="Auto Equip Tool", CurrentValue=raidAutoEquip,
     Callback=function(v) raidAutoEquip=v end
 })
 
-RaidTab:CreateSection("AutoSkill System")
+RaidTab:CreateSection("Raid Skills")
 UI.RaidSkillZ=RaidTab:CreateToggle({Name="Z",CurrentValue=raidSkillZ,Callback=function(v) raidSkillZ=v end})
 UI.RaidSkillX=RaidTab:CreateToggle({Name="X",CurrentValue=raidSkillX,Callback=function(v) raidSkillX=v end})
 UI.RaidSkillC=RaidTab:CreateToggle({Name="C",CurrentValue=raidSkillC,Callback=function(v) raidSkillC=v end})
 UI.RaidSkillV=RaidTab:CreateToggle({Name="V",CurrentValue=raidSkillV,Callback=function(v) raidSkillV=v end})
 UI.RaidSkillF=RaidTab:CreateToggle({Name="F",CurrentValue=raidSkillF,Callback=function(v) raidSkillF=v end})
 
-RaidTab:CreateSection("Shops")
+RaidTab:CreateSection("🛒 Normal Raid Shop")
 RaidTab:CreateButton({Name="🔄 Refresh Normal Shop", Callback=function()
-    if UI.NormalShopDD then UI.NormalShopDD:Refresh(getRaidShopItems("RAIDSHOP"), true) end
+    if UI.NormalRaidShopDD then UI.NormalRaidShopDD:Refresh(getNormalRaidShopItems(), true) end
 end})
-UI.NormalShopDD = RaidTab:CreateDropdown({
-    Name="Normal Raid Shop", Options=getRaidShopItems("RAIDSHOP"),
-    CurrentOption=normalShopItems,
+UI.NormalRaidShopDD = RaidTab:CreateDropdown({
+    Name="Items", Options=getNormalRaidShopItems(),
+    CurrentOption=normalRaidShopItems,
     MultipleOptions=true,
-    Callback=function(o) normalShopItems=o end
+    Callback=function(o) normalRaidShopItems=o end
 })
-UI.NormalShopToggle = RaidTab:CreateToggle({
-    Name="Normal Raid Shop AutoBuy", CurrentValue=normalShopEnabled,
-    Callback=function(v) normalShopEnabled=v end
+UI.NormalRaidShopToggle = RaidTab:CreateToggle({
+    Name="Auto-Buy", CurrentValue=normalRaidShopAutoBuy,
+    Callback=function(v) normalRaidShopAutoBuy=v end
 })
 
+RaidTab:CreateSection("🛒 Rush Raid Shop")
 RaidTab:CreateButton({Name="🔄 Refresh Rush Shop", Callback=function()
-    if UI.RushShopDD then UI.RushShopDD:Refresh(getRaidShopItems("RUSHSHOP"), true) end
+    if UI.RushRaidShopDD then UI.RushRaidShopDD:Refresh(getRushRaidShopItems(), true) end
 end})
-UI.RushShopDD = RaidTab:CreateDropdown({
-    Name="Rush Raid Shop", Options=getRaidShopItems("RUSHSHOP"),
-    CurrentOption=rushShopItems,
+UI.RushRaidShopDD = RaidTab:CreateDropdown({
+    Name="Items", Options=getRushRaidShopItems(),
+    CurrentOption=rushRaidShopItems,
     MultipleOptions=true,
-    Callback=function(o) rushShopItems=o end
+    Callback=function(o) rushRaidShopItems=o end
 })
-UI.RushShopToggle = RaidTab:CreateToggle({
-    Name="Rush Raid Shop AutoBuy", CurrentValue=rushShopEnabled,
-    Callback=function(v) rushShopEnabled=v end
+UI.RushRaidShopToggle = RaidTab:CreateToggle({
+    Name="Auto-Buy", CurrentValue=rushRaidShopAutoBuy,
+    Callback=function(v) rushRaidShopAutoBuy=v end
 })
 
+RaidTab:CreateSection("🛒 Castle Raid Shop")
 RaidTab:CreateButton({Name="🔄 Refresh Castle Shop", Callback=function()
-    if UI.CastleShopDD then UI.CastleShopDD:Refresh(getRaidShopItems("CASTLESHOP"), true) end
+    if UI.CastleRaidShopDD then UI.CastleRaidShopDD:Refresh(getCastleRaidShopItems(), true) end
 end})
-UI.CastleShopDD = RaidTab:CreateDropdown({
-    Name="Castle Raid Shop", Options=getRaidShopItems("CASTLESHOP"),
-    CurrentOption=castleShopItems,
+UI.CastleRaidShopDD = RaidTab:CreateDropdown({
+    Name="Items", Options=getCastleRaidShopItems(),
+    CurrentOption=castleRaidShopItems,
     MultipleOptions=true,
-    Callback=function(o) castleShopItems=o end
+    Callback=function(o) castleRaidShopItems=o end
 })
-UI.CastleShopToggle = RaidTab:CreateToggle({
-    Name="Castle Raid Shop AutoBuy", CurrentValue=castleShopEnabled,
-    Callback=function(v) castleShopEnabled=v end
+UI.CastleRaidShopToggle = RaidTab:CreateToggle({
+    Name="Auto-Buy", CurrentValue=castleRaidShopAutoBuy,
+    Callback=function(v) castleRaidShopAutoBuy=v end
 })
 
 -- ================================================
 -- SECTION 8.6: CAVE RAID TAB
 -- ================================================
-CaveRaidTab:CreateSection("Diamond Ore Farm")
-UI.CaveDiamondToggle = CaveRaidTab:CreateToggle({
-    Name="Diamond Ore Farm", CurrentValue=caveDiamondFarmEnabled,
-    Callback=function(v) caveDiamondFarmEnabled=v end
+CaveRaidTab:CreateSection("💎 Diamond Ore Farm")
+
+UI.CaveDiamondOreToggle = CaveRaidTab:CreateToggle({
+    Name="Farm Diamond Ore", CurrentValue=caveDiamondOreFarmEnabled,
+    Callback=function(v) caveDiamondOreFarmEnabled=v end
 })
+
 CaveRaidTab:CreateButton({Name="🔄 Refresh Tools", Callback=function()
-    if UI.CaveDiamondToolDD then UI.CaveDiamondToolDD:Refresh(getBackpackTools(), true) end
+    if UI.CaveSuperPickaxeDD then UI.CaveSuperPickaxeDD:Refresh(getBackpackTools(), true) end
 end})
-UI.CaveDiamondToolDD = CaveRaidTab:CreateDropdown({
-    Name="Tool (Super Pickaxe)", Options=getBackpackTools(),
-    CurrentOption=caveDiamondTool and {caveDiamondTool} or {},
+
+UI.CaveSuperPickaxeDD = CaveRaidTab:CreateDropdown({
+    Name="Super Pickaxe", Options=getBackpackTools(),
+    CurrentOption=caveSuperPickaxeTool and {caveSuperPickaxeTool} or {},
     MultipleOptions=false,
-    Callback=function(o) caveDiamondTool=o[1] end
-})
-UI.CaveDiamondAutoEquipToggle = CaveRaidTab:CreateToggle({
-    Name="Auto Equip Tool", CurrentValue=caveDiamondAutoEquip,
-    Callback=function(v) caveDiamondAutoEquip=v end
+    Callback=function(o) caveSuperPickaxeTool=o[1] end
 })
 
-CaveRaidTab:CreateSection("Cave Raid Creation")
+UI.CaveSuperPickaxeAutoEquipToggle = CaveRaidTab:CreateToggle({
+    Name="Auto Equip Pickaxe", CurrentValue=caveSuperPickaxeAutoEquip,
+    Callback=function(v) caveSuperPickaxeAutoEquip=v end
+})
+
+CaveRaidTab:CreateSection("🏰 Cave Raid Creation")
+
 UI.CaveRaidCreateToggle = CaveRaidTab:CreateToggle({
-    Name="Cave Raid Create", CurrentValue=caveRaidCreateEnabled,
-    Callback=function(v) caveRaidCreateEnabled=v; if not v then caveCircleReached=false end end
+    Name="Create Cave Raid", CurrentValue=caveRaidCreateEnabled,
+    Callback=function(v) caveRaidCreateEnabled=v end
 })
 
-CaveRaidTab:CreateSection("Inside Raid")
+CaveRaidTab:CreateSection("⚔️ Inside Cave Raid")
+
 UI.CaveRaidStartToggle = CaveRaidTab:CreateToggle({
-    Name="Cave Raid Start", CurrentValue=caveRaidStartEnabled,
+    Name="Start Raid", CurrentValue=caveRaidStartEnabled,
     Callback=function(v) caveRaidStartEnabled=v end
 })
+
 UI.CaveRaidAutoSkipToggle = CaveRaidTab:CreateToggle({
-    Name="Cave Raid AutoSkip", CurrentValue=caveRaidAutoSkipEnabled,
+    Name="Auto Skip", CurrentValue=caveRaidAutoSkipEnabled,
     Callback=function(v) caveRaidAutoSkipEnabled=v end
 })
+
 UI.CaveRaidReplayToggle = CaveRaidTab:CreateToggle({
-    Name="Cave Raid AutoReplay", CurrentValue=caveRaidReplayEnabled,
+    Name="Auto Replay", CurrentValue=caveRaidReplayEnabled,
     Callback=function(v) caveRaidReplayEnabled=v end
 })
+
+CaveRaidTab:CreateSection("🔧 Cave Raid Tool & Skills")
 
 CaveRaidTab:CreateButton({Name="🔄 Refresh Tools", Callback=function()
     if UI.CaveRaidToolDD then UI.CaveRaidToolDD:Refresh(getBackpackTools(), true) end
 end})
+
 UI.CaveRaidToolDD = CaveRaidTab:CreateDropdown({
-    Name="Cave Raid Tool", Options=getBackpackTools(),
+    Name="Tool", Options=getBackpackTools(),
     CurrentOption=caveRaidTool and {caveRaidTool} or {},
     MultipleOptions=false,
     Callback=function(o) caveRaidTool=o[1] end
 })
+
 UI.CaveRaidAutoEquipToggle = CaveRaidTab:CreateToggle({
-    Name="Cave Raid Tool Auto Equip", CurrentValue=caveRaidAutoEquip,
+    Name="Auto Equip Tool", CurrentValue=caveRaidAutoEquip,
     Callback=function(v) caveRaidAutoEquip=v end
 })
 
-CaveRaidTab:CreateSection("Cave Raid AutoSkill System")
+CaveRaidTab:CreateSection("Cave Raid Skills")
 UI.CaveRaidSkillZ=CaveRaidTab:CreateToggle({Name="Z",CurrentValue=caveRaidSkillZ,Callback=function(v) caveRaidSkillZ=v end})
 UI.CaveRaidSkillX=CaveRaidTab:CreateToggle({Name="X",CurrentValue=caveRaidSkillX,Callback=function(v) caveRaidSkillX=v end})
 UI.CaveRaidSkillC=CaveRaidTab:CreateToggle({Name="C",CurrentValue=caveRaidSkillC,Callback=function(v) caveRaidSkillC=v end})
 UI.CaveRaidSkillV=CaveRaidTab:CreateToggle({Name="V",CurrentValue=caveRaidSkillV,Callback=function(v) caveRaidSkillV=v end})
 UI.CaveRaidSkillF=CaveRaidTab:CreateToggle({Name="F",CurrentValue=caveRaidSkillF,Callback=function(v) caveRaidSkillF=v end})
 
-CaveRaidTab:CreateSection("Cave Raid Shop")
-CaveRaidTab:CreateButton({Name="🔄 Refresh Shop", Callback=function()
-    if UI.CaveShopDD then UI.CaveShopDD:Refresh(getRaidShopItems("CAVESHOP"), true) end
+CaveRaidTab:CreateSection("🛒 Cave Raid Shop")
+CaveRaidTab:CreateButton({Name="🔄 Refresh Cave Shop", Callback=function()
+    if UI.CaveRaidShopDD then UI.CaveRaidShopDD:Refresh(getCaveRaidShopItems(), true) end
 end})
-UI.CaveShopDD = CaveRaidTab:CreateDropdown({
-    Name="Cave Raid Shop", Options=getRaidShopItems("CAVESHOP"),
-    CurrentOption=caveShopItems,
+UI.CaveRaidShopDD = CaveRaidTab:CreateDropdown({
+    Name="Items", Options=getCaveRaidShopItems(),
+    CurrentOption=caveRaidShopItems,
     MultipleOptions=true,
-    Callback=function(o) caveShopItems=o end
+    Callback=function(o) caveRaidShopItems=o end
 })
-UI.CaveShopToggle = CaveRaidTab:CreateToggle({
-    Name="Cave Raid Shop AutoBuy", CurrentValue=caveShopEnabled,
-    Callback=function(v) caveShopEnabled=v end
+UI.CaveRaidShopToggle = CaveRaidTab:CreateToggle({
+    Name="Auto-Buy", CurrentValue=caveRaidShopAutoBuy,
+    Callback=function(v) caveRaidShopAutoBuy=v end
 })
 
 -- ================================================
@@ -1379,7 +1434,7 @@ end
 function updateAllUI()
     task.spawn(function()
         task.wait(0.2)
-        
+
         if UI.AutoFarmToggle then UI.AutoFarmToggle:Set(autofarmEnabled) end
         if UI.OceanToggle then UI.OceanToggle:Set(oceanMobsEnabled) end
         if UI.OceanAutoEquipToggle then UI.OceanAutoEquipToggle:Set(oceanAutoEquip) end
@@ -1400,19 +1455,19 @@ function updateAllUI()
         if UI.SkillC then UI.SkillC:Set(skillC) end
         if UI.SkillV then UI.SkillV:Set(skillV) end
         if UI.SkillF then UI.SkillF:Set(skillF) end
-        
+
         if UI.OceanSkillZ then UI.OceanSkillZ:Set(oceanSkillZ) end
         if UI.OceanSkillX then UI.OceanSkillX:Set(oceanSkillX) end
         if UI.OceanSkillC then UI.OceanSkillC:Set(oceanSkillC) end
         if UI.OceanSkillV then UI.OceanSkillV:Set(oceanSkillV) end
         if UI.OceanSkillF then UI.OceanSkillF:Set(oceanSkillF) end
-        
+
         if UI.EventSkillZ then UI.EventSkillZ:Set(eventSkillZ) end
         if UI.EventSkillX then UI.EventSkillX:Set(eventSkillX) end
         if UI.EventSkillC then UI.EventSkillC:Set(eventSkillC) end
         if UI.EventSkillV then UI.EventSkillV:Set(eventSkillV) end
         if UI.EventSkillF then UI.EventSkillF:Set(eventSkillF) end
-        
+
         -- Ocean-Hop toggles
         if UI.OceanHopToggle then UI.OceanHopToggle:Set(oceanHopEnabled) end
         if UI.OceanHopPriorityToggle then UI.OceanHopPriorityToggle:Set(oceanHopPriorityEnabled) end
@@ -1425,16 +1480,16 @@ function updateAllUI()
         if UI.OceanHopRegularSkillC then UI.OceanHopRegularSkillC:Set(oceanHopRegularSkillC) end
         if UI.OceanHopRegularSkillV then UI.OceanHopRegularSkillV:Set(oceanHopRegularSkillV) end
         if UI.OceanHopRegularSkillF then UI.OceanHopRegularSkillF:Set(oceanHopRegularSkillF) end
-        
+
         if UI.SpeedLoopToggle then UI.SpeedLoopToggle:Set(speedLoopEnabled) end
         if UI.DisableVFXToggle then UI.DisableVFXToggle:Set(disableVFX) end
         if UI.DisableCamShakeToggle then UI.DisableCamShakeToggle:Set(disableCamShake) end
         if UI.FastModeToggle then UI.FastModeToggle:Set(fastModeEnabled) end
-        
+
         if UI.SpeedSlider then UI.SpeedSlider:Set(customWalkSpeed) end
         if UI.FlySpeedSlider then UI.FlySpeedSlider:Set(flySpeed) end
-        
-        -- Raid toggles
+
+        -- Raid Tab UI updates
         if UI.RaidCreateToggle then UI.RaidCreateToggle:Set(raidCreateEnabled) end
         if UI.RaidStartToggle then UI.RaidStartToggle:Set(raidStartEnabled) end
         if UI.RaidAutoSkipToggle then UI.RaidAutoSkipToggle:Set(raidAutoSkipEnabled) end
@@ -1445,13 +1500,13 @@ function updateAllUI()
         if UI.RaidSkillC then UI.RaidSkillC:Set(raidSkillC) end
         if UI.RaidSkillV then UI.RaidSkillV:Set(raidSkillV) end
         if UI.RaidSkillF then UI.RaidSkillF:Set(raidSkillF) end
-        if UI.NormalShopToggle then UI.NormalShopToggle:Set(normalShopEnabled) end
-        if UI.RushShopToggle then UI.RushShopToggle:Set(rushShopEnabled) end
-        if UI.CastleShopToggle then UI.CastleShopToggle:Set(castleShopEnabled) end
-        
-        -- Cave Raid toggles
-        if UI.CaveDiamondToggle then UI.CaveDiamondToggle:Set(caveDiamondFarmEnabled) end
-        if UI.CaveDiamondAutoEquipToggle then UI.CaveDiamondAutoEquipToggle:Set(caveDiamondAutoEquip) end
+        if UI.NormalRaidShopToggle then UI.NormalRaidShopToggle:Set(normalRaidShopAutoBuy) end
+        if UI.RushRaidShopToggle then UI.RushRaidShopToggle:Set(rushRaidShopAutoBuy) end
+        if UI.CastleRaidShopToggle then UI.CastleRaidShopToggle:Set(castleRaidShopAutoBuy) end
+
+        -- Cave Raid Tab UI updates
+        if UI.CaveDiamondOreToggle then UI.CaveDiamondOreToggle:Set(caveDiamondOreFarmEnabled) end
+        if UI.CaveSuperPickaxeAutoEquipToggle then UI.CaveSuperPickaxeAutoEquipToggle:Set(caveSuperPickaxeAutoEquip) end
         if UI.CaveRaidCreateToggle then UI.CaveRaidCreateToggle:Set(caveRaidCreateEnabled) end
         if UI.CaveRaidStartToggle then UI.CaveRaidStartToggle:Set(caveRaidStartEnabled) end
         if UI.CaveRaidAutoSkipToggle then UI.CaveRaidAutoSkipToggle:Set(caveRaidAutoSkipEnabled) end
@@ -1462,10 +1517,10 @@ function updateAllUI()
         if UI.CaveRaidSkillC then UI.CaveRaidSkillC:Set(caveRaidSkillC) end
         if UI.CaveRaidSkillV then UI.CaveRaidSkillV:Set(caveRaidSkillV) end
         if UI.CaveRaidSkillF then UI.CaveRaidSkillF:Set(caveRaidSkillF) end
-        if UI.CaveShopToggle then UI.CaveShopToggle:Set(caveShopEnabled) end
-        
+        if UI.CaveRaidShopToggle then UI.CaveRaidShopToggle:Set(caveRaidShopAutoBuy) end
+
         task.wait(0.1)
-        
+
         -- Set dropdown values
         if UI.BossDD and selectedBoss then UI.BossDD:Set({selectedBoss}) end
         if UI.Step2DD and step2Tool then UI.Step2DD:Set({step2Tool}) end
@@ -1475,24 +1530,27 @@ function updateAllUI()
         if UI.TitleDD and selectedTitle then UI.TitleDD:Set({selectedTitle}) end
         if UI.GuarDD and #selectedGuaranteeItems > 0 then UI.GuarDD:Set(selectedGuaranteeItems) end
         if UI.MerchDD and #selectedMerchantItems > 0 then UI.MerchDD:Set(selectedMerchantItems) end
-        
+
         if UI.OceanHopMUIDD and oceanHopMUITool then UI.OceanHopMUIDD:Set({oceanHopMUITool}) end
         if UI.OceanHopPriorityDD and oceanHopPriorityMob then UI.OceanHopPriorityDD:Set({oceanHopPriorityMob}) end
         if UI.OceanHopRegularDD and oceanHopRegularTool then UI.OceanHopRegularDD:Set({oceanHopRegularTool}) end
         if UI.IslandMobDD and selectedIslandMob then UI.IslandMobDD:Set({selectedIslandMob}) end
         if UI.IslandToolDD and islandAutoEquipTool then UI.IslandToolDD:Set({islandAutoEquipTool}) end
-        
+
+        -- Raid dropdowns
         if UI.RaidTypeDD and selectedRaidType then UI.RaidTypeDD:Set({selectedRaidType}) end
         if UI.RaidToolDD and raidTool then UI.RaidToolDD:Set({raidTool}) end
-        if UI.NormalShopDD and #normalShopItems > 0 then UI.NormalShopDD:Set(normalShopItems) end
-        if UI.RushShopDD and #rushShopItems > 0 then UI.RushShopDD:Set(rushShopItems) end
-        if UI.CastleShopDD and #castleShopItems > 0 then UI.CastleShopDD:Set(castleShopItems) end
-        if UI.CaveDiamondToolDD and caveDiamondTool then UI.CaveDiamondToolDD:Set({caveDiamondTool}) end
+        if UI.NormalRaidShopDD and #normalRaidShopItems > 0 then UI.NormalRaidShopDD:Set(normalRaidShopItems) end
+        if UI.RushRaidShopDD and #rushRaidShopItems > 0 then UI.RushRaidShopDD:Set(rushRaidShopItems) end
+        if UI.CastleRaidShopDD and #castleRaidShopItems > 0 then UI.CastleRaidShopDD:Set(castleRaidShopItems) end
+
+        -- Cave Raid dropdowns
+        if UI.CaveSuperPickaxeDD and caveSuperPickaxeTool then UI.CaveSuperPickaxeDD:Set({caveSuperPickaxeTool}) end
         if UI.CaveRaidToolDD and caveRaidTool then UI.CaveRaidToolDD:Set({caveRaidTool}) end
-        if UI.CaveShopDD and #caveShopItems > 0 then UI.CaveShopDD:Set(caveShopItems) end
-        
+        if UI.CaveRaidShopDD and #caveRaidShopItems > 0 then UI.CaveRaidShopDD:Set(caveRaidShopItems) end
+
         task.wait(0.1)
-        
+
         -- Refresh dropdowns
         if UI.BossDD then UI.BossDD:Refresh(getAvailableBosses(), true) end
         if UI.Step2DD then UI.Step2DD:Refresh(getBackpackTools(), true) end
@@ -1501,20 +1559,18 @@ function updateAllUI()
         if UI.EventDD then UI.EventDD:Refresh(getBackpackTools(), true) end
         if UI.TitleDD then UI.TitleDD:Refresh(getTitles(), true) end
         if UI.GuarDD then UI.GuarDD:Refresh(getGuaranteeItems(), true) end
-        
+
         if UI.OceanHopMUIDD then UI.OceanHopMUIDD:Refresh(getBackpackTools(), true) end
         if UI.OceanHopRegularDD then UI.OceanHopRegularDD:Refresh(getBackpackTools(), true) end
         if UI.IslandMobDD then UI.IslandMobDD:Refresh(getIslandMobs(), true) end
         if UI.IslandToolDD then UI.IslandToolDD:Refresh(getBackpackTools(), true) end
         if UI.MerchDD then UI.MerchDD:Refresh(getMerchantItems(), true) end
-        
-        if UI.RaidToolDD then UI.RaidToolDD:Refresh(getBackpackTools(), true) end
-        if UI.NormalShopDD then UI.NormalShopDD:Refresh(getRaidShopItems("RAIDSHOP"), true) end
-        if UI.RushShopDD then UI.RushShopDD:Refresh(getRaidShopItems("RUSHSHOP"), true) end
-        if UI.CastleShopDD then UI.CastleShopDD:Refresh(getRaidShopItems("CASTLESHOP"), true) end
-        if UI.CaveDiamondToolDD then UI.CaveDiamondToolDD:Refresh(getBackpackTools(), true) end
-        if UI.CaveRaidToolDD then UI.CaveRaidToolDD:Refresh(getBackpackTools(), true) end
-        if UI.CaveShopDD then UI.CaveShopDD:Refresh(getRaidShopItems("CAVESHOP"), true) end
+
+        -- Raid shop refreshes
+        if UI.NormalRaidShopDD then UI.NormalRaidShopDD:Refresh(getNormalRaidShopItems(), true) end
+        if UI.RushRaidShopDD then UI.RushRaidShopDD:Refresh(getRushRaidShopItems(), true) end
+        if UI.CastleRaidShopDD then UI.CastleRaidShopDD:Refresh(getCastleRaidShopItems(), true) end
+        if UI.CaveRaidShopDD then UI.CaveRaidShopDD:Refresh(getCaveRaidShopItems(), true) end
     end)
 end
 
@@ -1635,6 +1691,61 @@ local function useIslandSkills()
     end)
 end
 
+local function useRaidSkills()
+    pcall(function()
+        local ui=LocalPlayer.PlayerGui:FindFirstChild("SkillUI")
+        if ui and ui:FindFirstChild("Mobile Button") then
+            if raidSkillZ and ui["Mobile Button"]:FindFirstChild("Z") then robustClick(ui["Mobile Button"]["Z"]); task.wait(0.05) end
+            if raidSkillX and ui["Mobile Button"]:FindFirstChild("X") then robustClick(ui["Mobile Button"]["X"]); task.wait(0.05) end
+            if raidSkillC and ui["Mobile Button"]:FindFirstChild("C") then robustClick(ui["Mobile Button"]["C"]); task.wait(0.05) end
+            if raidSkillV and ui["Mobile Button"]:FindFirstChild("V") then robustClick(ui["Mobile Button"]["V"]); task.wait(0.05) end
+            if raidSkillF and ui["Mobile Button"]:FindFirstChild("F") then robustClick(ui["Mobile Button"]["F"]); task.wait(0.05) end
+        end
+    end)
+end
+
+local function useCaveRaidSkills()
+    pcall(function()
+        local ui=LocalPlayer.PlayerGui:FindFirstChild("SkillUI")
+        if ui and ui:FindFirstChild("Mobile Button") then
+            if caveRaidSkillZ and ui["Mobile Button"]:FindFirstChild("Z") then robustClick(ui["Mobile Button"]["Z"]); task.wait(0.05) end
+            if caveRaidSkillX and ui["Mobile Button"]:FindFirstChild("X") then robustClick(ui["Mobile Button"]["X"]); task.wait(0.05) end
+            if caveRaidSkillC and ui["Mobile Button"]:FindFirstChild("C") then robustClick(ui["Mobile Button"]["C"]); task.wait(0.05) end
+            if caveRaidSkillV and ui["Mobile Button"]:FindFirstChild("V") then robustClick(ui["Mobile Button"]["V"]); task.wait(0.05) end
+            if caveRaidSkillF and ui["Mobile Button"]:FindFirstChild("F") then robustClick(ui["Mobile Button"]["F"]); task.wait(0.05) end
+        end
+    end)
+end
+
+
+local function useEventSkills()
+    pcall(function()
+        local ui=LocalPlayer.PlayerGui:FindFirstChild("SkillUI")
+        if ui and ui:FindFirstChild("Mobile Button") then
+            if eventSkillZ and ui["Mobile Button"]:FindFirstChild("Z") then robustClick(ui["Mobile Button"]["Z"]); task.wait(0.05) end
+            if eventSkillX and ui["Mobile Button"]:FindFirstChild("X") then robustClick(ui["Mobile Button"]["X"]); task.wait(0.05) end
+            if eventSkillC and ui["Mobile Button"]:FindFirstChild("C") then robustClick(ui["Mobile Button"]["C"]); task.wait(0.05) end
+            if eventSkillV and ui["Mobile Button"]:FindFirstChild("V") then robustClick(ui["Mobile Button"]["V"]); task.wait(0.05) end
+            if eventSkillF and ui["Mobile Button"]:FindFirstChild("F") then robustClick(ui["Mobile Button"]["F"]); task.wait(0.05) end
+        end
+    end)
+end
+
+local function farmEventMob(mob)
+    if not mob or not mob:FindFirstChild("HumanoidRootPart") then return end
+    local hrp=LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    pcall(function()
+        local t=mob.HumanoidRootPart
+        local off=Vector3.new(0,0,0)
+        if followMode=="behind" then off=t.CFrame.LookVector*-followDistance
+        elseif followMode=="front" then off=t.CFrame.LookVector*followDistance
+        elseif followMode=="above" then off=Vector3.new(0,followDistance,0)
+        elseif followMode=="below" then off=Vector3.new(0,-followDistance,0) end
+        hrp.CFrame=CFrame.new(t.Position+off, t.Position)
+    end)
+    useEventSkills()
+end
 local function useSkillF()
     pcall(function()
         local ui=LocalPlayer.PlayerGui:FindFirstChild("SkillUI")
@@ -1692,7 +1803,7 @@ local function executeBossFarmSteps()
                 end
             end
             if step3Tool then task.wait(0.3); equipTool(step3Tool); task.wait(0.5) end
-            
+
             task.wait(0.5)
             stepsCompleted=true; isExecutingSteps=false
             STEPS_IN_PROGRESS=false; mainFarmPaused=false
@@ -1701,161 +1812,221 @@ local function executeBossFarmSteps()
     end)
 end
 
--- ========== RAID SYSTEM CORE FUNCTIONS ==========
--- (getRaidShopItems e' stata spostata in SECTION 2, serve prima della costruzione delle tab)
-
-local function buyRaidShopItems(shopName, itemList)
+-- ================================================
+-- RAID CORE FUNCTIONS
+-- ================================================
+local function extractRaidItem(itemName)
     pcall(function()
-        local g = LocalPlayer.PlayerGui:FindFirstChild("MainGui")
-        if g and g:FindFirstChild(shopName) and g[shopName]:FindFirstChild("Main") then
-            for _,itemName in pairs(itemList) do
-                local item = g[shopName].Main:FindFirstChild(itemName)
-                if item and item:FindFirstChild("Frame") and item.Frame:FindFirstChild("Buy") then
-                    robustClick(item.Frame.Buy)
-                    task.wait(0.3)
+        local invFrame = LocalPlayer.PlayerGui:FindFirstChild("MainGui")
+        if not invFrame then return end
+        local inventory = invFrame:FindFirstChild("INVENTORY")
+        if not inventory then return end
+        local invFrame2 = inventory:FindFirstChild("InvFrame")
+        if not invFrame2 then return end
+        local item = invFrame2:FindFirstChild(itemName)
+        if not item then return end
+        local btn = item:FindFirstChild("Button")
+        if btn and btn:IsA("TextButton") then
+            raidExtractionInProgress = true
+            robustClick(btn)
+            task.wait(0.5)
+            raidExtractionInProgress = false
+        end
+    end)
+end
+
+local function interactRaidSpawner(raidType)
+    pcall(function()
+        if raidType == "Normal Raid" then
+            local spawner = workspace:FindFirstChild("NPC")
+            if spawner and spawner:FindFirstChild("RaidSummon") then
+                local epart = spawner.RaidSummon:FindFirstChild("Epart")
+                if epart then
+                    local prompt = epart:FindFirstChild("ProximityPrompt")
+                    if prompt then
+                        fireproximityprompt(prompt)
+                    end
+                end
+            end
+        elseif raidType == "Rush Raid" then
+            local npc = workspace:FindFirstChild("NPC")
+            if npc and npc:FindFirstChild("BossRushNPC") then
+                local hrp = npc.BossRushNPC:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local clickGui = hrp:FindFirstChild("ClickGUI")
+                    if clickGui then
+                        local gui = clickGui:FindFirstChild("GUI")
+                        if gui then
+                            local imgBtn = gui:FindFirstChild("ImageButton")
+                            if imgBtn then robustClick(imgBtn) end
+                        end
+                    end
+                end
+            end
+        elseif raidType == "Castle Raid" then
+            local npc = workspace:FindFirstChild("NPC")
+            if npc and npc:FindFirstChild("TowerRaidSummon") then
+                local hrp = npc.TowerRaidSummon:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local clickGui = hrp:FindFirstChild("ClickGUI")
+                    if clickGui then
+                        local gui = clickGui:FindFirstChild("GUI")
+                        if gui then
+                            local imgBtn = gui:FindFirstChild("ImageButton")
+                            if imgBtn then robustClick(imgBtn) end
+                        end
+                    end
+                end
+            end
+        elseif raidType == "Cave Raid" then
+            local npc = workspace:FindFirstChild("NPC")
+            if npc and npc:FindFirstChild("CaveRaidNPC") then
+                local hrp = npc.CaveRaidNPC:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local clickGui = hrp:FindFirstChild("ClickGUI")
+                    if clickGui then
+                        local gui = clickGui:FindFirstChild("GUI")
+                        if gui then
+                            local imgBtn = gui:FindFirstChild("ImageButton")
+                            if imgBtn then robustClick(imgBtn) end
+                        end
+                    end
                 end
             end
         end
     end)
 end
 
-local function extractTicket(ticketName)
-    pcall(function()
-        local inv = LocalPlayer.PlayerGui.MainGui.INVENTORY.InvFrame:FindFirstChild(ticketName)
-        if inv then
-            local btn = inv:FindFirstChild("Button")
-            if btn then robustClick(btn) end
-        end
-    end)
-end
-
-local function clickRaidSpawner(raidType)
-    pcall(function()
-        if raidType == "Normal" then
-            local npc = workspace.NPC:FindFirstChild("RaidSummon")
-            if npc and npc:FindFirstChild("Epart") then
-                local prompt = npc.Epart:FindFirstChild("ProximityPrompt")
-                if prompt and fireproximityprompt then fireproximityprompt(prompt) end
-            end
-        elseif raidType == "Rush" then
-            local npc = workspace.NPC:FindFirstChild("BossRushNPC")
-            if npc then
-                local btn = npc.HumanoidRootPart.ClickGUI.GUI:FindFirstChild("ImageButton")
-                if btn then robustClick(btn) end
-            end
-        elseif raidType == "Castle" then
-            local npc = workspace.NPC:FindFirstChild("TowerRaidSummon")
-            if npc then
-                local btn = npc.HumanoidRootPart.ClickGUI.GUI:FindFirstChild("ImageButton")
-                if btn then robustClick(btn) end
-            end
-        end
-    end)
-end
-
-local function clickCaveSpawner()
-    pcall(function()
-        local npc = workspace.NPC:FindFirstChild("CaveRaidNPC")
-        if npc then
-            local btn = npc.HumanoidRootPart.ClickGUI.GUI:FindFirstChild("ImageButton")
-            if btn then robustClick(btn) end
-        end
-    end)
-end
-
-local function getRaidCirclePart(raidType)
-    if raidType == "Normal" then return workspace:FindFirstChild("RaidPath")
-    elseif raidType == "Rush" then return workspace:FindFirstChild("BossRushPart")
-    elseif raidType == "Castle" then return workspace:FindFirstChild("TowerRaidPart")
-    end
-end
-
-local function teleportToCircle(part)
+local function teleportToRaid(raidType)
     pcall(function()
         local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        if not hrp or not part then return end
-        local pos
-        if part:IsA("BasePart") then pos = part.Position
-        elseif part.PrimaryPart then pos = part.PrimaryPart.Position end
-        if pos then hrp.CFrame = CFrame.new(pos + Vector3.new(0,3,0)) end
-    end)
-end
+        if not hrp then return end
 
-local function raidClickStart()
-    pcall(function()
-        local rg = LocalPlayer.PlayerGui:FindFirstChild("Raid")
-        if rg and rg:FindFirstChild("Start") then robustClick(rg.Start) end
-    end)
-end
-
-local function isAutoSkipOn()
-    local result = false
-    pcall(function()
-        local rg = LocalPlayer.PlayerGui:FindFirstChild("Raid")
-        if rg and rg:FindFirstChild("AutoSkip") then
-            local onGrad = rg.AutoSkip:FindFirstChild("ON")
-            if onGrad and onGrad:IsA("UIGradient") then result = onGrad.Enabled end
+        local targetPart = nil
+        if raidType == "Normal Raid" then
+            targetPart = workspace:FindFirstChild("RaidPath")
+        elseif raidType == "Rush Raid" then
+            targetPart = workspace:FindFirstChild("BossRushPart")
+        elseif raidType == "Castle Raid" then
+            targetPart = workspace:FindFirstChild("TowerRaidPart")
+        elseif raidType == "Cave Raid" then
+            targetPart = workspace:FindFirstChild("CaveRaidPart")
         end
-    end)
-    return result
-end
 
-local function raidToggleAutoSkip(desired)
-    pcall(function()
-        local rg = LocalPlayer.PlayerGui:FindFirstChild("Raid")
-        if rg and rg:FindFirstChild("AutoSkip") and isAutoSkipOn() ~= desired then
-            robustClick(rg.AutoSkip)
+        if targetPart then
+            hrp.CFrame = targetPart.CFrame * CFrame.new(0, 5, 0)
         end
     end)
 end
 
-local function raidClickReplay()
+local function autoSkipRaid()
     pcall(function()
-        local rg = LocalPlayer.PlayerGui:FindFirstChild("Raid")
-        if rg and rg:FindFirstChild("Replay") then robustClick(rg.Replay) end
-    end)
-end
+        local raidGui = LocalPlayer.PlayerGui:FindFirstChild("Raid")
+        if not raidGui then return end
+        local autoSkip = raidGui:FindFirstChild("AutoSkip")
+        if not autoSkip then return end
 
-local function useRaidSkills()
-    pcall(function()
-        local ui=LocalPlayer.PlayerGui:FindFirstChild("SkillUI")
-        if ui and ui:FindFirstChild("Mobile Button") then
-            local mb = ui["Mobile Button"]
-            if raidSkillZ and mb:FindFirstChild("Z") then robustClick(mb.Z); task.wait(0.05) end
-            if raidSkillX and mb:FindFirstChild("X") then robustClick(mb.X); task.wait(0.05) end
-            if raidSkillC and mb:FindFirstChild("C") then robustClick(mb.C); task.wait(0.05) end
-            if raidSkillV and mb:FindFirstChild("V") then robustClick(mb.V); task.wait(0.05) end
-            if raidSkillF and mb:FindFirstChild("F") then robustClick(mb.F); task.wait(0.05) end
+        -- Check if OFF gradient is enabled (meaning skip is OFF)
+        local offGradient = autoSkip:FindFirstChild("OFF")
+        if offGradient and offGradient:IsA("UIGradient") then
+            if offGradient.Enabled then
+                -- Need to turn ON
+                local imgBtn = autoSkip:FindFirstChild("ImageButton")
+                if imgBtn then robustClick(imgBtn) end
+            end
         end
     end)
 end
 
-local function useCaveRaidSkills()
+local function startRaid()
     pcall(function()
-        local ui=LocalPlayer.PlayerGui:FindFirstChild("SkillUI")
-        if ui and ui:FindFirstChild("Mobile Button") then
-            local mb = ui["Mobile Button"]
-            if caveRaidSkillZ and mb:FindFirstChild("Z") then robustClick(mb.Z); task.wait(0.05) end
-            if caveRaidSkillX and mb:FindFirstChild("X") then robustClick(mb.X); task.wait(0.05) end
-            if caveRaidSkillC and mb:FindFirstChild("C") then robustClick(mb.C); task.wait(0.05) end
-            if caveRaidSkillV and mb:FindFirstChild("V") then robustClick(mb.V); task.wait(0.05) end
-            if caveRaidSkillF and mb:FindFirstChild("F") then robustClick(mb.F); task.wait(0.05) end
+        local raidGui = LocalPlayer.PlayerGui:FindFirstChild("Raid")
+        if not raidGui then return end
+        local startBtn = raidGui:FindFirstChild("Start")
+        if startBtn and startBtn:IsA("ImageButton") then
+            robustClick(startBtn)
         end
     end)
+end
+
+local function replayRaid()
+    pcall(function()
+        local raidGui = LocalPlayer.PlayerGui:FindFirstChild("Raid")
+        if not raidGui then return end
+        local replayBtn = raidGui:FindFirstChild("Replay")
+        if replayBtn and replayBtn:IsA("ImageButton") then
+            robustClick(replayBtn)
+        end
+    end)
+end
+
+local function buyRaidShopItems(shopName, selectedItems)
+    pcall(function()
+        local g = LocalPlayer.PlayerGui:FindFirstChild("MainGui")
+        if not g then return end
+        local shop = g:FindFirstChild(shopName)
+        if not shop or not shop:FindFirstChild("Main") then return end
+
+        for _, itemName in pairs(selectedItems) do
+            local itemBtn = shop.Main:FindFirstChild(itemName)
+            if itemBtn and itemBtn:IsA("ImageButton") then
+                local frame = itemBtn:FindFirstChild("Frame")
+                if frame then
+                    local buyBtn = frame:FindFirstChild("Buy")
+                    if buyBtn then
+                        robustClick(buyBtn)
+                        task.wait(0.3)
+                    end
+                end
+            end
+        end
+    end)
+end
+
+local function farmRaidMob(mob)
+    if not mob or not mob:FindFirstChild("HumanoidRootPart") then return end
+    local hrp=LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    pcall(function()
+        local t=mob.HumanoidRootPart
+        local off=Vector3.new(0,0,0)
+        if followMode=="behind" then off=t.CFrame.LookVector*-followDistance
+        elseif followMode=="front" then off=t.CFrame.LookVector*followDistance
+        elseif followMode=="above" then off=Vector3.new(0,followDistance,0)
+        elseif followMode=="below" then off=Vector3.new(0,-followDistance,0) end
+        hrp.CFrame=CFrame.new(t.Position+off, t.Position)
+    end)
+    useRaidSkills()
+end
+
+local function farmCaveRaidMob(mob)
+    if not mob or not mob:FindFirstChild("HumanoidRootPart") then return end
+    local hrp=LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    pcall(function()
+        local t=mob.HumanoidRootPart
+        local off=Vector3.new(0,0,0)
+        if followMode=="behind" then off=t.CFrame.LookVector*-followDistance
+        elseif followMode=="front" then off=t.CFrame.LookVector*followDistance
+        elseif followMode=="above" then off=Vector3.new(0,followDistance,0)
+        elseif followMode=="below" then off=Vector3.new(0,-followDistance,0) end
+        hrp.CFrame=CFrame.new(t.Position+off, t.Position)
+    end)
+    useCaveRaidSkills()
 end
 
 -- ================================================
 -- SECTION 18: GAME LOOPS
 -- ================================================
 
--- Inventory (DYNAMIC BLACKLIST)
+-- Inventory (DYNAMIC BLACKLIST with Raid Items)
 task.spawn(function()
     local invRemote = game:GetService("ReplicatedStorage"):WaitForChild("System"):WaitForChild("Inv"):WaitForChild("Inventory")
     local itemUsing = LocalPlayer:WaitForChild("ItemUsing")
     local keysToWatch = {"Sword", "Melee", "Special", "Fruit", "Accessory"}
-    
+
     while task.wait(3) do
-        if inventoryEnabled and not STEPS_IN_PROGRESS then
+        if inventoryEnabled and not STEPS_IN_PROGRESS and not raidExtractionInProgress then
             local backpack = LocalPlayer:FindFirstChild("Backpack")
             if backpack then
                 local blacklist = {}
@@ -1865,12 +2036,14 @@ task.spawn(function()
                         blacklist[obj.Value] = true
                     end
                 end
-                -- Blacklist ticket/ore del raid selezionato mentre e' attiva la creazione
-                if raidCreateEnabled and raidTicketMap[selectedRaidType] then
-                    blacklist[raidTicketMap[selectedRaidType]] = true
+                -- Add raid items to blacklist if raid creation is enabled
+                if raidCreateEnabled then
+                    blacklist["Raid Ticket"] = true
+                    blacklist["Rush Ticket"] = true
+                    blacklist["Castle Ticket"] = true
                 end
                 if caveRaidCreateEnabled then
-                    blacklist[CAVE_ORE_NAME] = true
+                    blacklist["Diamond Ore"] = true
                 end
                 for _, item in ipairs(backpack:GetChildren()) do
                     if item:IsA("Tool") and not blacklist[item.Name] then
@@ -1882,6 +2055,7 @@ task.spawn(function()
         end
     end
 end)
+
 -- ================================================
 -- 4 LOOP MANCANTI - Da inserire dopo il loop Inventory e prima di Ocean-Hop
 -- ================================================
@@ -1945,7 +2119,6 @@ task.spawn(function()
             pcall(function()
                 if workspace:FindFirstChild("Mobs") then
                     for _, islandFolder in pairs(workspace.Mobs:GetChildren()) do
-                        -- Skip Ocean since it has its own tab
                         if islandFolder.Name == "Ocean" then continue end
                         if islandFolder:IsA("Folder") then
                             local mob = islandFolder:FindFirstChild(selectedIslandMob)
@@ -1957,24 +2130,21 @@ task.spawn(function()
                     end
                 end
             end)
-            
+
             if foundMob then
-                -- Save mob coordinates
                 pcall(function()
                     if foundMob:FindFirstChild("HumanoidRootPart") then
                         selectedIslandMobCoordinates = foundMob.HumanoidRootPart.Position
                     end
                 end)
-                
+
                 if islandAutoEquip and islandAutoEquipTool then
                     forceEquipTool(islandAutoEquipTool)
                 end
                 while foundMob and foundMob.Parent and islandFarmEnabled and selectedIslandMob == foundMob.Name and not mainFarmPaused and not STEPS_IN_PROGRESS do
-                    -- Re-equip tool if lost
                     if islandAutoEquip and islandAutoEquipTool and not LocalPlayer.Character:FindFirstChild(islandAutoEquipTool) then
                         forceEquipTool(islandAutoEquipTool)
                     end
-                    -- Position player near mob
                     pcall(function()
                         local hrp=LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
                         if hrp and foundMob:FindFirstChild("HumanoidRootPart") then
@@ -1991,7 +2161,6 @@ task.spawn(function()
                     task.wait(0.2)
                 end
             elseif selectedIslandMobCoordinates and islandFarmEnabled then
-                -- Mob not loaded, go to saved coordinates
                 pcall(function()
                     local hrp=LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
                     if hrp then
@@ -2069,7 +2238,7 @@ local function farmOceanHopMob(mob, mode)
         local t=mob.HumanoidRootPart
         hrp.CFrame=CFrame.new(t.Position+Vector3.new(0,3,2), t.Position)
     end)
-    
+
     if mode == "regular" then
         if oceanHopRegularTool then forceEquipTool(oceanHopRegularTool) end
         useOceanHopRegularSkills()
@@ -2080,7 +2249,7 @@ end
 task.spawn(function()
     while task.wait(0.3) do
         if not oceanHopEnabled or STEPS_IN_PROGRESS then continue end
-        
+
         local oceanFolder = (workspace:FindFirstChild("Mobs") and workspace.Mobs:FindFirstChild("Ocean"))
         local mobs = {}
         if oceanFolder then
@@ -2090,16 +2259,14 @@ task.spawn(function()
                 end
             end
         end
-            
+
         if #mobs > 0 then
-            -- Equip MUI if needed
             if oceanHopMUIAutoEquip and oceanHopMUITool then
                 forceEquipTool(oceanHopMUITool)
                 if oceanHopMUISkillF then useSkillF() end
                 task.wait(1)
             end
-            
-            -- Farm with priority if enabled
+
             local targetMob = nil
             if oceanHopPriorityEnabled and oceanHopPriorityMob then
                 for _, m in pairs(mobs) do
@@ -2109,7 +2276,7 @@ task.spawn(function()
                     end
                 end
             end
-            
+
             if targetMob then
                 while targetMob and targetMob.Parent and oceanHopEnabled do
                     farmOceanHopMob(targetMob, "regular")
@@ -2117,7 +2284,7 @@ task.spawn(function()
                     if not workspace.Mobs.Ocean:FindFirstChild(targetMob.Name) then break end
                 end
             end
-            
+
             for _, mob in pairs(mobs) do
                 if mob ~= targetMob then
                     while mob and mob.Parent and oceanHopEnabled do
@@ -2128,7 +2295,6 @@ task.spawn(function()
                 end
             end
         else
-            -- Ocean Empty, wait 10s then hop
             print("🔄 [OCEAN-HOP] Ocean vuoto, avvio timer 10s...")
             local startTime = tick()
             local hopConfirmed = true
@@ -2143,7 +2309,7 @@ task.spawn(function()
                         end
                     end
                 end
-                
+
                 if checkMobs > 0 then
                     print("🚫 [OCEAN-HOP] Mob spawnato! Timer annullato.")
                     hopConfirmed = false
@@ -2184,7 +2350,6 @@ task.spawn(function()
                 if oceanAutoEquip and oceanAutoEquipTool then forceEquipTool(oceanAutoEquipTool) end
                 for _,mob in pairs(mobs) do
                     while mob and mob.Parent and oceanMobsEnabled and not STEPS_IN_PROGRESS do
-                        -- Re-equip tool if lost
                         if oceanAutoEquip and oceanAutoEquipTool and not LocalPlayer.Character:FindFirstChild(oceanAutoEquipTool) then
                             forceEquipTool(oceanAutoEquipTool)
                         end
@@ -2198,178 +2363,204 @@ task.spawn(function()
     end
 end)
 
--- ========== RAID SYSTEM GAME LOOPS ==========
+-- ================================================
+-- RAID LOOPS
+-- ================================================
 
--- State manager: resetta la categoria attiva quando torniamo nel Normal Server
+-- Normal/Rush/Castle Raid Creation Loop
+task.spawn(function()
+    while task.wait(2) do
+        if not raidCreateEnabled then continue end
+        if isInRaidServer() then continue end
+
+        pcall(function()
+            local itemName = nil
+            if selectedRaidType == "Normal Raid" then
+                itemName = "Raid Ticket"
+            elseif selectedRaidType == "Rush Raid" then
+                itemName = "Rush Ticket"
+            elseif selectedRaidType == "Castle Raid" then
+                itemName = "Castle Ticket"
+            end
+
+            if not itemName then return end
+
+            -- Step 1: Extract item from inventory
+            extractRaidItem(itemName)
+            task.wait(1)
+
+            -- Step 2: Interact with spawner
+            interactRaidSpawner(selectedRaidType)
+            task.wait(1)
+
+            -- Step 3: Teleport to raid circle
+            teleportToRaid(selectedRaidType)
+        end)
+    end
+end)
+
+-- Cave Raid Creation Loop
+task.spawn(function()
+    while task.wait(2) do
+        if not caveRaidCreateEnabled then continue end
+        if isInRaidServer() then continue end
+
+        pcall(function()
+            -- Step 1: Extract Diamond Ore from inventory
+            extractRaidItem("Diamond Ore")
+            task.wait(1)
+
+            -- Step 2: Interact with Cave Raid spawner
+            interactRaidSpawner("Cave Raid")
+            task.wait(1)
+
+            -- Step 3: Teleport to Cave Raid circle
+            teleportToRaid("Cave Raid")
+        end)
+    end
+end)
+
+-- Diamond Ore Farm Loop
+task.spawn(function()
+    while task.wait(0.3) do
+        if not caveDiamondOreFarmEnabled then continue end
+        if isInRaidServer() then continue end
+
+        pcall(function()
+            if caveSuperPickaxeAutoEquip and caveSuperPickaxeTool then
+                forceEquipTool(caveSuperPickaxeTool)
+            end
+
+            local superOre = workspace:FindFirstChild("Mobs")
+            if superOre and superOre:FindFirstChild("Cave Island") then
+                local caveIsland = superOre["Cave Island"]
+                local ore = caveIsland:FindFirstChild("Super Ore")
+                if ore and ore:FindFirstChild("HumanoidRootPart") then
+                    local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                    if hrp then
+                        hrp.CFrame = ore.HumanoidRootPart.CFrame * CFrame.new(0, 3, 0)
+                        -- Click spam while holding pickaxe
+                        local tool = LocalPlayer.Character:FindFirstChild(caveSuperPickaxeTool or "")
+                        if tool then
+                            pcall(function()
+                                if firesignal then
+                                    firesignal(tool.Activated)
+                                end
+                            end)
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+-- Inside Raid - Normal/Rush/Castle Management
 task.spawn(function()
     while task.wait(1) do
-        if game.PlaceId == NORMAL_SERVER_ID then
-            activeRaidCategory = nil
+        if not isInRaidServer() then continue end
+
+        -- Auto Start
+        if raidStartEnabled then
+            startRaid()
         end
-    end
-end)
 
--- RAID CREATE LOOP (Normal/Rush/Castle) - attivo solo nel Normal Server
-task.spawn(function()
-    while task.wait(0.5) do
-        if game.PlaceId == RAID_SERVER_ID then raidCircleReached = false continue end
-        if not raidCreateEnabled then raidCircleReached = false continue end
-        if game.PlaceId ~= NORMAL_SERVER_ID then continue end
-        if raidCircleReached then continue end
-
-        local ticketName = raidTicketMap[selectedRaidType]
-        if not ticketName then continue end
-
-        extractTicket(ticketName)
-        task.wait(1)
-        clickRaidSpawner(selectedRaidType)
-        task.wait(1)
-        local circle = getRaidCirclePart(selectedRaidType)
-        if circle then
-            teleportToCircle(circle)
-            raidCircleReached = true
-            activeRaidCategory = "Standard"
-            print("✅ [RAID] Teletrasportato al cerchio ("..selectedRaidType.."), attendo countdown 20s...")
+        -- Auto Skip
+        if raidAutoSkipEnabled then
+            autoSkipRaid()
         end
-    end
-end)
 
--- CAVE RAID CREATE LOOP - attivo solo nel Normal Server
-task.spawn(function()
-    while task.wait(0.5) do
-        if game.PlaceId == RAID_SERVER_ID then caveCircleReached = false continue end
-        if not caveRaidCreateEnabled then caveCircleReached = false continue end
-        if game.PlaceId ~= NORMAL_SERVER_ID then continue end
-        if caveCircleReached then continue end
-
-        extractTicket(CAVE_ORE_NAME)
-        task.wait(1)
-        clickCaveSpawner()
-        task.wait(1)
-        local circle = workspace:FindFirstChild("CaveRaidPart")
-        if circle then
-            teleportToCircle(circle)
-            caveCircleReached = true
-            activeRaidCategory = "Cave"
-            print("✅ [CAVE RAID] Teletrasportato al cerchio, attendo countdown 20s...")
+        -- Auto Replay
+        if raidReplayEnabled then
+            replayRaid()
         end
-    end
-end)
 
--- INSIDE RAID LOOP (Normal/Rush/Castle) - attivo solo nel Raid Server, solo se e' la categoria attiva
-task.spawn(function()
-    while task.wait(0.5) do
-        if game.PlaceId ~= RAID_SERVER_ID or activeRaidCategory ~= "Standard" then continue end
-
-        if raidStartEnabled then raidClickStart() end
-        if raidAutoSkipEnabled then raidToggleAutoSkip(true) end
-        if raidReplayEnabled then raidClickReplay() end
-
-        if raidAutoEquip and raidTool and not LocalPlayer.Character:FindFirstChild(raidTool) then
+        -- Auto Equip Tool
+        if raidAutoEquip and raidTool then
             forceEquipTool(raidTool)
         end
 
-        if normalShopEnabled and #normalShopItems>0 then buyRaidShopItems("RAIDSHOP", normalShopItems) end
-        if rushShopEnabled   and #rushShopItems>0   then buyRaidShopItems("RUSHSHOP", rushShopItems) end
-        if castleShopEnabled and #castleShopItems>0 then buyRaidShopItems("CASTLESHOP", castleShopItems) end
-
-        local mobs = {}
+        -- Farm Raid Mobs
         pcall(function()
-            local raidFolder = workspace.Mobs:FindFirstChild("Raid")
-            if raidFolder then
-                for _,mob in pairs(raidFolder:GetChildren()) do
+            if workspace:FindFirstChild("Mobs") and workspace.Mobs:FindFirstChild("Raid") then
+                for _, mob in pairs(workspace.Mobs.Raid:GetChildren()) do
                     if mob:IsA("Model") and mob:FindFirstChild("HumanoidRootPart") then
-                        table.insert(mobs, mob)
+                        farmRaidMob(mob)
                     end
                 end
             end
         end)
-
-        for _,mob in pairs(mobs) do
-            while mob and mob.Parent and game.PlaceId==RAID_SERVER_ID and activeRaidCategory=="Standard" do
-                pcall(function()
-                    local hrp=LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                    if hrp then
-                        local t=mob.HumanoidRootPart
-                        hrp.CFrame=CFrame.new(t.Position+Vector3.new(0,0,-attackRange/2), t.Position)
-                    end
-                end)
-                useRaidSkills()
-                task.wait(0.2)
-                if not workspace.Mobs.Raid:FindFirstChild(mob.Name) then break end
-            end
-        end
     end
 end)
 
--- INSIDE CAVE RAID LOOP - attivo solo nel Raid Server, solo se e' la categoria attiva
+-- Inside Raid - Cave Raid Management
 task.spawn(function()
-    while task.wait(0.5) do
-        if game.PlaceId ~= RAID_SERVER_ID or activeRaidCategory ~= "Cave" then continue end
+    while task.wait(1) do
+        if not isInRaidServer() then continue end
 
-        if caveRaidStartEnabled then raidClickStart() end
-        if caveRaidAutoSkipEnabled then raidToggleAutoSkip(true) end
-        if caveRaidReplayEnabled then raidClickReplay() end
+        -- Auto Start
+        if caveRaidStartEnabled then
+            startRaid()
+        end
 
-        if caveRaidAutoEquip and caveRaidTool and not LocalPlayer.Character:FindFirstChild(caveRaidTool) then
+        -- Auto Skip
+        if caveRaidAutoSkipEnabled then
+            autoSkipRaid()
+        end
+
+        -- Auto Replay
+        if caveRaidReplayEnabled then
+            replayRaid()
+        end
+
+        -- Auto Equip Tool
+        if caveRaidAutoEquip and caveRaidTool then
             forceEquipTool(caveRaidTool)
         end
 
-        if caveShopEnabled and #caveShopItems>0 then buyRaidShopItems("CAVESHOP", caveShopItems) end
-
-        local mobs = {}
+        -- Farm Cave Raid Mobs
         pcall(function()
-            local raidFolder = workspace.Mobs:FindFirstChild("Raid")
-            if raidFolder then
-                for _,mob in pairs(raidFolder:GetChildren()) do
+            if workspace:FindFirstChild("Mobs") and workspace.Mobs:FindFirstChild("Raid") then
+                for _, mob in pairs(workspace.Mobs.Raid:GetChildren()) do
                     if mob:IsA("Model") and mob:FindFirstChild("HumanoidRootPart") then
-                        table.insert(mobs, mob)
+                        farmCaveRaidMob(mob)
                     end
                 end
             end
         end)
+    end
+end)
 
-        for _,mob in pairs(mobs) do
-            while mob and mob.Parent and game.PlaceId==RAID_SERVER_ID and activeRaidCategory=="Cave" do
-                pcall(function()
-                    local hrp=LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                    if hrp then
-                        local t=mob.HumanoidRootPart
-                        hrp.CFrame=CFrame.new(t.Position+Vector3.new(0,0,-attackRange/2), t.Position)
-                    end
-                end)
-                useCaveRaidSkills()
-                task.wait(0.2)
-                if not workspace.Mobs.Raid:FindFirstChild(mob.Name) then break end
-            end
+-- Raid Shop AutoBuy Loops
+task.spawn(function()
+    while task.wait(1.5) do
+        if normalRaidShopAutoBuy and #normalRaidShopItems > 0 then
+            buyRaidShopItems("RAIDSHOP", normalRaidShopItems)
         end
     end
 end)
 
--- CAVE DIAMOND ORE FARM (fuori raid)
 task.spawn(function()
-    while task.wait(0.3) do
-        if not caveDiamondFarmEnabled then continue end
-        pcall(function()
-            local island = workspace.Mobs:FindFirstChild("Cave Island")
-            local ore = island and island:FindFirstChild("Super Ore")
-            if not ore then return end
+    while task.wait(1.5) do
+        if rushRaidShopAutoBuy and #rushRaidShopItems > 0 then
+            buyRaidShopItems("RUSHSHOP", rushRaidShopItems)
+        end
+    end
+end)
 
-            if caveDiamondAutoEquip and caveDiamondTool and not LocalPlayer.Character:FindFirstChild(caveDiamondTool) then
-                forceEquipTool(caveDiamondTool)
-            end
+task.spawn(function()
+    while task.wait(1.5) do
+        if castleRaidShopAutoBuy and #castleRaidShopItems > 0 then
+            buyRaidShopItems("CASTLESHOP", castleRaidShopItems)
+        end
+    end
+end)
 
-            local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            local orePart = ore:IsA("BasePart") and ore or ore.PrimaryPart
-            if hrp and orePart then
-                hrp.CFrame = CFrame.new(orePart.Position + Vector3.new(0,3,0), orePart.Position)
-            end
-
-            local VIM = game:GetService("VirtualInputManager")
-            VIM:SendMouseButtonEvent(500,500,0,true,game,1)
-            task.wait(0.02)
-            VIM:SendMouseButtonEvent(500,500,0,false,game,1)
-        end)
+task.spawn(function()
+    while task.wait(1.5) do
+        if caveRaidShopAutoBuy and #caveRaidShopItems > 0 then
+            buyRaidShopItems("CAVESHOP", caveRaidShopItems)
+        end
     end
 end)
 
@@ -2441,43 +2632,19 @@ LocalPlayer.CharacterAdded:Connect(function()
     stepsCompleted=false; step2FActivated=false
     isExecutingSteps=false; STEPS_IN_PROGRESS=false
     alreadyAtEventIsland=false
-    
-    -- Re-equip Ocean Farm tool if active
+
     if oceanMobsEnabled and oceanAutoEquip and oceanAutoEquipTool then
         forceEquipTool(oceanAutoEquipTool)
     end
-    
-    -- Re-equip Island Farm tool if active
+
     if islandFarmEnabled and islandAutoEquip and islandAutoEquipTool then
         forceEquipTool(islandAutoEquipTool)
     end
-    
-    -- Re-equip Event Farm tool if active
+
     if eventIslandEnabled and eventAutoEquipTool then
         forceEquipTool(eventAutoEquipTool)
     end
-    
-    -- Re-equip Raid tool if active (dentro il Raid Server, categoria Standard)
-    if game.PlaceId == RAID_SERVER_ID and activeRaidCategory == "Standard" and raidAutoEquip and raidTool then
-        forceEquipTool(raidTool)
-    end
-    
-    -- Re-equip Cave Raid tool if active (dentro il Raid Server, categoria Cave)
-    if game.PlaceId == RAID_SERVER_ID and activeRaidCategory == "Cave" and caveRaidAutoEquip and caveRaidTool then
-        forceEquipTool(caveRaidTool)
-    end
-    
-    -- Re-equip Diamond Ore tool if active (Cave Island, fuori raid)
-    if caveDiamondFarmEnabled and caveDiamondAutoEquip and caveDiamondTool then
-        forceEquipTool(caveDiamondTool)
-    end
-    
-    -- Se la morte ha interrotto l'attesa al cerchio nel Normal Server, resetta per ritentare
-    if game.PlaceId == NORMAL_SERVER_ID then
-        raidCircleReached = false
-        caveCircleReached = false
-    end
-    
+
     if flyEnabled then task.wait(0.5); startFly() end
     if autofarmEnabled then task.wait(1); executeBossFarmSteps() end
 end)
