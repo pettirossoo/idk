@@ -14,21 +14,18 @@ local selectedBoss       = "None"
 local followMode         = "behind"
 local followDistance     = 5
 local attackRange        = 12
--- Boss Skills (Default: OFF)
 local skillZ             = false
 local skillX             = false
 local skillC             = false
 local skillV             = false
 local skillF             = false
 
--- Ocean Skills (Default: OFF)
 local oceanSkillZ        = false
 local oceanSkillX        = false
 local oceanSkillC        = false
 local oceanSkillV        = false
 local oceanSkillF        = false
 
--- Event Skills (Default: OFF)
 local eventSkillZ        = false
 local eventSkillX        = false
 local eventSkillC        = false
@@ -55,16 +52,12 @@ local islandSkillC           = false
 local islandSkillV           = false
 local islandSkillF           = false
 
--- ========== OCEAN-HOP VARIABLES ==========
 local oceanHopEnabled              = false
--- MUI Section (Immortality)
 local oceanHopMUITool              = nil
 local oceanHopMUIAutoEquip         = false
 local oceanHopMUISkillF            = false
--- Priority Mob Selection
 local oceanHopPriorityEnabled      = false
 local oceanHopPriorityMob          = nil
--- Regular Farm
 local oceanHopRegularEnabled       = false
 local oceanHopRegularTool          = nil
 local oceanHopRegularSkillZ        = false
@@ -139,8 +132,11 @@ local caveRaidSkillF = false
 local caveRaidShopItems = {}
 local caveRaidShopAutoBuy = false
 
--- Raid extraction tracking
-local raidExtractionInProgress = false
+-- Raid extraction tracking (ONE-TIME flags)
+local raidTicketExtracted = false
+local caveOreExtracted = false
+local raidCreationStep = 0 -- 0=idle, 1=extracted, 2=interacted, 3=teleported
+local caveRaidCreationStep = 0
 
 -- ================================================
 -- SECTION 2: HELPER FUNCTIONS
@@ -274,6 +270,7 @@ local function isInNormalServer()
     return game.PlaceId == NORMAL_SERVER_PLACE_ID
 end
 
+-- Raid Shop: same structure as merchant (Frame with BuyButton + Stocks)
 local function getRaidShopItems(shopName)
     local items = {}
     pcall(function()
@@ -282,7 +279,9 @@ local function getRaidShopItems(shopName)
         local shop = g:FindFirstChild(shopName)
         if shop and shop:FindFirstChild("Main") then
             for _,c in pairs(shop.Main:GetChildren()) do
-                if c:IsA("ImageButton") and c.Name ~= "UIGridLayout" and c.Name ~= "UIPadding" then
+                if (c:IsA("Frame") or c:IsA("TextButton"))
+                and c:FindFirstChild("BuyButton") and c:FindFirstChild("Stocks")
+                and c.Name~="UIGridLayout" and c.Name~="UIPadding" then
                     table.insert(items, c.Name)
                 end
             end
@@ -447,7 +446,7 @@ local function applyVariables(s)
     autofarmEnabled       = s.autofarmEnabled    or false
     selectedBoss          = s.selectedBoss       or "Sung Jinwoo"
     followMode            = s.followMode         or "behind"
-    followDistance     = s.followDistance     or 5
+    followDistance        = s.followDistance     or 5
     attackRange           = s.attackRange        or 12
     step2Tool             = s.step2Tool
     step2FEnabled         = s.step2FEnabled      or false
@@ -507,7 +506,6 @@ local function applyVariables(s)
     islandSkillC          = s.islandSkillC ~= nil and s.islandSkillC or false
     islandSkillV          = s.islandSkillV ~= nil and s.islandSkillV or false
     islandSkillF          = s.islandSkillF ~= nil and s.islandSkillF or false
-    -- Raid variables
     raidCreateEnabled     = s.raidCreateEnabled or false
     selectedRaidType      = s.selectedRaidType or "Normal Raid"
     raidStartEnabled      = s.raidStartEnabled or false
@@ -526,7 +524,6 @@ local function applyVariables(s)
     rushRaidShopAutoBuy   = s.rushRaidShopAutoBuy or false
     castleRaidShopItems   = s.castleRaidShopItems or {}
     castleRaidShopAutoBuy = s.castleRaidShopAutoBuy or false
-    -- Cave Raid variables
     caveDiamondOreFarmEnabled = s.caveDiamondOreFarmEnabled or false
     caveSuperPickaxeTool  = s.caveSuperPickaxeTool
     caveSuperPickaxeAutoEquip = s.caveSuperPickaxeAutoEquip or false
@@ -549,16 +546,12 @@ end
 
 loadConfigFromFile()
 
--- Refresh config dropdowns after loading from file
 task.spawn(function()
     task.wait(2)
     if UI.ConfigDD then UI.ConfigDD:Refresh(getConfigNames(), true) end
     if UI.AutoLoadDD then UI.AutoLoadDD:Refresh(getAutoLoadOpts(), true) end
 end)
 
--- ================================================
--- AUTO-LOAD CONFIG (load variables before Rayfield)
--- ================================================
 if autoLoadConfigName ~= "" and savedConfigs[autoLoadConfigName] then
     applyVariables(savedConfigs[autoLoadConfigName])
 end
@@ -883,7 +876,7 @@ UI.OceanHopRegularToggle=OceanHopTab:CreateToggle({
     Name="Regular Farm", CurrentValue=oceanHopRegularEnabled,
     Callback=function(v) oceanHopRegularEnabled=v end
 })
-OceanHopTab:CreateDropdown({
+UI.OceanHopRegularDD=OceanHopTab:CreateDropdown({
     Name="Tool", Options=getBackpackTools(),
     CurrentOption=oceanHopRegularTool and {oceanHopRegularTool} or {},
     MultipleOptions=false,
@@ -929,7 +922,13 @@ RaidTab:CreateSection("🎫 Raid Creation")
 
 UI.RaidCreateToggle = RaidTab:CreateToggle({
     Name="Create Raid", CurrentValue=raidCreateEnabled,
-    Callback=function(v) raidCreateEnabled=v end
+    Callback=function(v)
+        raidCreateEnabled=v
+        if not v then
+            raidTicketExtracted = false
+            raidCreationStep = 0
+        end
+    end
 })
 
 UI.RaidTypeDD = RaidTab:CreateDropdown({
@@ -937,7 +936,11 @@ UI.RaidTypeDD = RaidTab:CreateDropdown({
     Options={"Normal Raid", "Rush Raid", "Castle Raid"},
     CurrentOption={selectedRaidType},
     MultipleOptions=false,
-    Callback=function(o) selectedRaidType=o[1] end
+    Callback=function(o)
+        selectedRaidType=o[1]
+        raidTicketExtracted = false
+        raidCreationStep = 0
+    end
 })
 
 RaidTab:CreateSection("⚔️ Inside Raid")
@@ -1057,7 +1060,13 @@ CaveRaidTab:CreateSection("🏰 Cave Raid Creation")
 
 UI.CaveRaidCreateToggle = CaveRaidTab:CreateToggle({
     Name="Create Cave Raid", CurrentValue=caveRaidCreateEnabled,
-    Callback=function(v) caveRaidCreateEnabled=v end
+    Callback=function(v)
+        caveRaidCreateEnabled=v
+        if not v then
+            caveOreExtracted = false
+            caveRaidCreationStep = 0
+        end
+    end
 })
 
 CaveRaidTab:CreateSection("⚔️ Inside Cave Raid")
@@ -1468,7 +1477,6 @@ function updateAllUI()
         if UI.EventSkillV then UI.EventSkillV:Set(eventSkillV) end
         if UI.EventSkillF then UI.EventSkillF:Set(eventSkillF) end
 
-        -- Ocean-Hop toggles
         if UI.OceanHopToggle then UI.OceanHopToggle:Set(oceanHopEnabled) end
         if UI.OceanHopPriorityToggle then UI.OceanHopPriorityToggle:Set(oceanHopPriorityEnabled) end
         if UI.OceanHopMUIToggle then UI.OceanHopMUIToggle:Set(oceanHopMUIAutoEquip) end
@@ -1521,7 +1529,6 @@ function updateAllUI()
 
         task.wait(0.1)
 
-        -- Set dropdown values
         if UI.BossDD and selectedBoss then UI.BossDD:Set({selectedBoss}) end
         if UI.Step2DD and step2Tool then UI.Step2DD:Set({step2Tool}) end
         if UI.Step3DD and step3Tool then UI.Step3DD:Set({step3Tool}) end
@@ -1537,21 +1544,18 @@ function updateAllUI()
         if UI.IslandMobDD and selectedIslandMob then UI.IslandMobDD:Set({selectedIslandMob}) end
         if UI.IslandToolDD and islandAutoEquipTool then UI.IslandToolDD:Set({islandAutoEquipTool}) end
 
-        -- Raid dropdowns
         if UI.RaidTypeDD and selectedRaidType then UI.RaidTypeDD:Set({selectedRaidType}) end
         if UI.RaidToolDD and raidTool then UI.RaidToolDD:Set({raidTool}) end
         if UI.NormalRaidShopDD and #normalRaidShopItems > 0 then UI.NormalRaidShopDD:Set(normalRaidShopItems) end
         if UI.RushRaidShopDD and #rushRaidShopItems > 0 then UI.RushRaidShopDD:Set(rushRaidShopItems) end
         if UI.CastleRaidShopDD and #castleRaidShopItems > 0 then UI.CastleRaidShopDD:Set(castleRaidShopItems) end
 
-        -- Cave Raid dropdowns
         if UI.CaveSuperPickaxeDD and caveSuperPickaxeTool then UI.CaveSuperPickaxeDD:Set({caveSuperPickaxeTool}) end
         if UI.CaveRaidToolDD and caveRaidTool then UI.CaveRaidToolDD:Set({caveRaidTool}) end
         if UI.CaveRaidShopDD and #caveRaidShopItems > 0 then UI.CaveRaidShopDD:Set(caveRaidShopItems) end
 
         task.wait(0.1)
 
-        -- Refresh dropdowns
         if UI.BossDD then UI.BossDD:Refresh(getAvailableBosses(), true) end
         if UI.Step2DD then UI.Step2DD:Refresh(getBackpackTools(), true) end
         if UI.Step3DD then UI.Step3DD:Refresh(getBackpackTools(), true) end
@@ -1566,7 +1570,6 @@ function updateAllUI()
         if UI.IslandToolDD then UI.IslandToolDD:Refresh(getBackpackTools(), true) end
         if UI.MerchDD then UI.MerchDD:Refresh(getMerchantItems(), true) end
 
-        -- Raid shop refreshes
         if UI.NormalRaidShopDD then UI.NormalRaidShopDD:Refresh(getNormalRaidShopItems(), true) end
         if UI.RushRaidShopDD then UI.RushRaidShopDD:Refresh(getRushRaidShopItems(), true) end
         if UI.CastleRaidShopDD then UI.CastleRaidShopDD:Refresh(getCastleRaidShopItems(), true) end
@@ -1606,11 +1609,37 @@ end)
 -- ================================================
 -- SECTION 17: CORE FUNCTIONS
 -- ================================================
+
+-- Enhanced robustClick with mobile support (from AutoReplay.txt)
 local function robustClick(btn)
     if not btn then return end
     pcall(function()
-        if firesignal then firesignal(btn.MouseButton1Click)
-        elseif btn.MouseButton1Click then btn.MouseButton1Click:Fire() end
+        -- Method 1: Activate (best for mobile ImageButton)
+        btn:Activate()
+    end)
+    pcall(function()
+        -- Method 2: firesignal MouseButton1Click
+        if firesignal then firesignal(btn.MouseButton1Click) end
+    end)
+    pcall(function()
+        -- Method 3: getconnections Activated
+        if getconnections then
+            for _, c in pairs(getconnections(btn.Activated)) do
+                c:Fire()
+            end
+        end
+    end)
+    pcall(function()
+        -- Method 4: getconnections MouseButton1Click
+        if getconnections then
+            for _, c in pairs(getconnections(btn.MouseButton1Click)) do
+                c:Fire()
+            end
+        end
+    end)
+    pcall(function()
+        -- Method 5: direct Fire
+        if btn.MouseButton1Click then btn.MouseButton1Click:Fire() end
     end)
 end
 
@@ -1691,33 +1720,6 @@ local function useIslandSkills()
     end)
 end
 
-local function useRaidSkills()
-    pcall(function()
-        local ui=LocalPlayer.PlayerGui:FindFirstChild("SkillUI")
-        if ui and ui:FindFirstChild("Mobile Button") then
-            if raidSkillZ and ui["Mobile Button"]:FindFirstChild("Z") then robustClick(ui["Mobile Button"]["Z"]); task.wait(0.05) end
-            if raidSkillX and ui["Mobile Button"]:FindFirstChild("X") then robustClick(ui["Mobile Button"]["X"]); task.wait(0.05) end
-            if raidSkillC and ui["Mobile Button"]:FindFirstChild("C") then robustClick(ui["Mobile Button"]["C"]); task.wait(0.05) end
-            if raidSkillV and ui["Mobile Button"]:FindFirstChild("V") then robustClick(ui["Mobile Button"]["V"]); task.wait(0.05) end
-            if raidSkillF and ui["Mobile Button"]:FindFirstChild("F") then robustClick(ui["Mobile Button"]["F"]); task.wait(0.05) end
-        end
-    end)
-end
-
-local function useCaveRaidSkills()
-    pcall(function()
-        local ui=LocalPlayer.PlayerGui:FindFirstChild("SkillUI")
-        if ui and ui:FindFirstChild("Mobile Button") then
-            if caveRaidSkillZ and ui["Mobile Button"]:FindFirstChild("Z") then robustClick(ui["Mobile Button"]["Z"]); task.wait(0.05) end
-            if caveRaidSkillX and ui["Mobile Button"]:FindFirstChild("X") then robustClick(ui["Mobile Button"]["X"]); task.wait(0.05) end
-            if caveRaidSkillC and ui["Mobile Button"]:FindFirstChild("C") then robustClick(ui["Mobile Button"]["C"]); task.wait(0.05) end
-            if caveRaidSkillV and ui["Mobile Button"]:FindFirstChild("V") then robustClick(ui["Mobile Button"]["V"]); task.wait(0.05) end
-            if caveRaidSkillF and ui["Mobile Button"]:FindFirstChild("F") then robustClick(ui["Mobile Button"]["F"]); task.wait(0.05) end
-        end
-    end)
-end
-
-
 local function useEventSkills()
     pcall(function()
         local ui=LocalPlayer.PlayerGui:FindFirstChild("SkillUI")
@@ -1746,6 +1748,33 @@ local function farmEventMob(mob)
     end)
     useEventSkills()
 end
+
+local function useRaidSkills()
+    pcall(function()
+        local ui=LocalPlayer.PlayerGui:FindFirstChild("SkillUI")
+        if ui and ui:FindFirstChild("Mobile Button") then
+            if raidSkillZ and ui["Mobile Button"]:FindFirstChild("Z") then robustClick(ui["Mobile Button"]["Z"]); task.wait(0.05) end
+            if raidSkillX and ui["Mobile Button"]:FindFirstChild("X") then robustClick(ui["Mobile Button"]["X"]); task.wait(0.05) end
+            if raidSkillC and ui["Mobile Button"]:FindFirstChild("C") then robustClick(ui["Mobile Button"]["C"]); task.wait(0.05) end
+            if raidSkillV and ui["Mobile Button"]:FindFirstChild("V") then robustClick(ui["Mobile Button"]["V"]); task.wait(0.05) end
+            if raidSkillF and ui["Mobile Button"]:FindFirstChild("F") then robustClick(ui["Mobile Button"]["F"]); task.wait(0.05) end
+        end
+    end)
+end
+
+local function useCaveRaidSkills()
+    pcall(function()
+        local ui=LocalPlayer.PlayerGui:FindFirstChild("SkillUI")
+        if ui and ui:FindFirstChild("Mobile Button") then
+            if caveRaidSkillZ and ui["Mobile Button"]:FindFirstChild("Z") then robustClick(ui["Mobile Button"]["Z"]); task.wait(0.05) end
+            if caveRaidSkillX and ui["Mobile Button"]:FindFirstChild("X") then robustClick(ui["Mobile Button"]["X"]); task.wait(0.05) end
+            if caveRaidSkillC and ui["Mobile Button"]:FindFirstChild("C") then robustClick(ui["Mobile Button"]["C"]); task.wait(0.05) end
+            if caveRaidSkillV and ui["Mobile Button"]:FindFirstChild("V") then robustClick(ui["Mobile Button"]["V"]); task.wait(0.05) end
+            if caveRaidSkillF and ui["Mobile Button"]:FindFirstChild("F") then robustClick(ui["Mobile Button"]["F"]); task.wait(0.05) end
+        end
+    end)
+end
+
 local function useSkillF()
     pcall(function()
         local ui=LocalPlayer.PlayerGui:FindFirstChild("SkillUI")
@@ -1813,10 +1842,17 @@ local function executeBossFarmSteps()
 end
 
 -- ================================================
--- RAID CORE FUNCTIONS
+-- RAID CORE FUNCTIONS (FIXED)
 -- ================================================
+
+-- Extract item from InvFrame (ONE TIME only)
 local function extractRaidItem(itemName)
+    local success = false
     pcall(function()
+        -- Check if already in backpack/character
+        if LocalPlayer.Backpack:FindFirstChild(itemName) then success = true; return end
+        if LocalPlayer.Character:FindFirstChild(itemName) then success = true; return end
+
         local invFrame = LocalPlayer.PlayerGui:FindFirstChild("MainGui")
         if not invFrame then return end
         local inventory = invFrame:FindFirstChild("INVENTORY")
@@ -1831,17 +1867,26 @@ local function extractRaidItem(itemName)
             robustClick(btn)
             task.wait(0.5)
             raidExtractionInProgress = false
+            success = true
         end
     end)
+    return success
 end
 
+-- Teleport to spawner and interact
 local function interactRaidSpawner(raidType)
     pcall(function()
+        local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+
         if raidType == "Normal Raid" then
             local spawner = workspace:FindFirstChild("NPC")
             if spawner and spawner:FindFirstChild("RaidSummon") then
                 local epart = spawner.RaidSummon:FindFirstChild("Epart")
-                if epart then
+                if epart and epart:IsA("BasePart") then
+                    -- Teleport near the spawner
+                    hrp.CFrame = epart.CFrame * CFrame.new(0, 3, 5)
+                    task.wait(0.5)
                     local prompt = epart:FindFirstChild("ProximityPrompt")
                     if prompt then
                         fireproximityprompt(prompt)
@@ -1851,9 +1896,11 @@ local function interactRaidSpawner(raidType)
         elseif raidType == "Rush Raid" then
             local npc = workspace:FindFirstChild("NPC")
             if npc and npc:FindFirstChild("BossRushNPC") then
-                local hrp = npc.BossRushNPC:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    local clickGui = hrp:FindFirstChild("ClickGUI")
+                local hrpNPC = npc.BossRushNPC:FindFirstChild("HumanoidRootPart")
+                if hrpNPC and hrpNPC:IsA("BasePart") then
+                    hrp.CFrame = hrpNPC.CFrame * CFrame.new(0, 3, 5)
+                    task.wait(0.5)
+                    local clickGui = hrpNPC:FindFirstChild("ClickGUI")
                     if clickGui then
                         local gui = clickGui:FindFirstChild("GUI")
                         if gui then
@@ -1866,9 +1913,11 @@ local function interactRaidSpawner(raidType)
         elseif raidType == "Castle Raid" then
             local npc = workspace:FindFirstChild("NPC")
             if npc and npc:FindFirstChild("TowerRaidSummon") then
-                local hrp = npc.TowerRaidSummon:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    local clickGui = hrp:FindFirstChild("ClickGUI")
+                local hrpNPC = npc.TowerRaidSummon:FindFirstChild("HumanoidRootPart")
+                if hrpNPC and hrpNPC:IsA("BasePart") then
+                    hrp.CFrame = hrpNPC.CFrame * CFrame.new(0, 3, 5)
+                    task.wait(0.5)
+                    local clickGui = hrpNPC:FindFirstChild("ClickGUI")
                     if clickGui then
                         local gui = clickGui:FindFirstChild("GUI")
                         if gui then
@@ -1881,9 +1930,11 @@ local function interactRaidSpawner(raidType)
         elseif raidType == "Cave Raid" then
             local npc = workspace:FindFirstChild("NPC")
             if npc and npc:FindFirstChild("CaveRaidNPC") then
-                local hrp = npc.CaveRaidNPC:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    local clickGui = hrp:FindFirstChild("ClickGUI")
+                local hrpNPC = npc.CaveRaidNPC:FindFirstChild("HumanoidRootPart")
+                if hrpNPC and hrpNPC:IsA("BasePart") then
+                    hrp.CFrame = hrpNPC.CFrame * CFrame.new(0, 3, 5)
+                    task.wait(0.5)
+                    local clickGui = hrpNPC:FindFirstChild("ClickGUI")
                     if clickGui then
                         local gui = clickGui:FindFirstChild("GUI")
                         if gui then
@@ -1897,6 +1948,7 @@ local function interactRaidSpawner(raidType)
     end)
 end
 
+-- Teleport to raid circle after interaction
 local function teleportToRaid(raidType)
     pcall(function()
         local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -1913,12 +1965,13 @@ local function teleportToRaid(raidType)
             targetPart = workspace:FindFirstChild("CaveRaidPart")
         end
 
-        if targetPart then
+        if targetPart and targetPart:IsA("BasePart") then
             hrp.CFrame = targetPart.CFrame * CFrame.new(0, 5, 0)
         end
     end)
 end
 
+-- AutoSkip: OFF.Enabled=true means skip is OFF in game -> need to click to turn ON
 local function autoSkipRaid()
     pcall(function()
         local raidGui = LocalPlayer.PlayerGui:FindFirstChild("Raid")
@@ -1926,40 +1979,84 @@ local function autoSkipRaid()
         local autoSkip = raidGui:FindFirstChild("AutoSkip")
         if not autoSkip then return end
 
-        -- Check if OFF gradient is enabled (meaning skip is OFF)
-        local offGradient = autoSkip:FindFirstChild("OFF")
-        if offGradient and offGradient:IsA("UIGradient") then
-            if offGradient.Enabled then
-                -- Need to turn ON
-                local imgBtn = autoSkip:FindFirstChild("ImageButton")
-                if imgBtn then robustClick(imgBtn) end
+        -- Check OFF gradient (if enabled = skip is OFF in game)
+        local offGradient = nil
+        for _, child in pairs(autoSkip:GetDescendants()) do
+            if child.Name == "OFF" and child:IsA("UIGradient") then
+                offGradient = child
+                break
+            end
+        end
+
+        if offGradient and offGradient.Enabled then
+            -- Skip is OFF, need to click to turn ON
+            local buttons = {}
+            if autoSkip:IsA("TextButton") or autoSkip:IsA("ImageButton") then
+                table.insert(buttons, autoSkip)
+            end
+            for _, v in pairs(autoSkip:GetDescendants()) do
+                if v:IsA("TextButton") or v:IsA("ImageButton") then
+                    table.insert(buttons, v)
+                end
+            end
+            for _, btn in pairs(buttons) do
+                robustClick(btn)
             end
         end
     end)
 end
 
+-- Start Raid with Visible check
 local function startRaid()
     pcall(function()
         local raidGui = LocalPlayer.PlayerGui:FindFirstChild("Raid")
         if not raidGui then return end
         local startBtn = raidGui:FindFirstChild("Start")
-        if startBtn and startBtn:IsA("ImageButton") then
-            robustClick(startBtn)
+        if not startBtn then return end
+
+        if startBtn.Visible == false then return end
+
+        local buttons = {}
+        if startBtn:IsA("TextButton") or startBtn:IsA("ImageButton") then
+            table.insert(buttons, startBtn)
+        end
+        for _, v in pairs(startBtn:GetDescendants()) do
+            if v:IsA("TextButton") or v:IsA("ImageButton") then
+                table.insert(buttons, v)
+            end
+        end
+        for _, btn in pairs(buttons) do
+            robustClick(btn)
         end
     end)
 end
 
+-- Replay Raid with Visible check
 local function replayRaid()
     pcall(function()
         local raidGui = LocalPlayer.PlayerGui:FindFirstChild("Raid")
         if not raidGui then return end
         local replayBtn = raidGui:FindFirstChild("Replay")
-        if replayBtn and replayBtn:IsA("ImageButton") then
-            robustClick(replayBtn)
+        if not replayBtn then return end
+
+        if replayBtn.Visible == false then return end
+
+        local buttons = {}
+        if replayBtn:IsA("TextButton") or replayBtn:IsA("ImageButton") then
+            table.insert(buttons, replayBtn)
+        end
+        for _, v in pairs(replayBtn:GetDescendants()) do
+            if v:IsA("TextButton") or v:IsA("ImageButton") then
+                table.insert(buttons, v)
+            end
+        end
+        for _, btn in pairs(buttons) do
+            robustClick(btn)
         end
     end)
 end
 
+-- Buy raid shop items (same method as merchant)
 local function buyRaidShopItems(shopName, selectedItems)
     pcall(function()
         local g = LocalPlayer.PlayerGui:FindFirstChild("MainGui")
@@ -1968,15 +2065,12 @@ local function buyRaidShopItems(shopName, selectedItems)
         if not shop or not shop:FindFirstChild("Main") then return end
 
         for _, itemName in pairs(selectedItems) do
-            local itemBtn = shop.Main:FindFirstChild(itemName)
-            if itemBtn and itemBtn:IsA("ImageButton") then
-                local frame = itemBtn:FindFirstChild("Frame")
-                if frame then
-                    local buyBtn = frame:FindFirstChild("Buy")
-                    if buyBtn then
-                        robustClick(buyBtn)
-                        task.wait(0.3)
-                    end
+            local f = shop.Main:FindFirstChild(itemName)
+            if f and f:FindFirstChild("Stocks") and f:FindFirstChild("BuyButton") then
+                local s = f.Stocks.Text:match("(%d+)")
+                if s and tonumber(s) > 0 then
+                    robustClick(f.BuyButton)
+                    task.wait(0.3)
                 end
             end
         end
@@ -2055,10 +2149,6 @@ task.spawn(function()
         end
     end
 end)
-
--- ================================================
--- 4 LOOP MANCANTI - Da inserire dopo il loop Inventory e prima di Ocean-Hop
--- ================================================
 
 -- Guarantee
 task.spawn(function()
@@ -2364,14 +2454,22 @@ task.spawn(function()
 end)
 
 -- ================================================
--- RAID LOOPS
+-- RAID LOOPS (FIXED)
 -- ================================================
 
--- Normal/Rush/Castle Raid Creation Loop
+-- Normal/Rush/Castle Raid Creation Loop (STEP-BASED, ONE-TIME extraction)
 task.spawn(function()
     while task.wait(2) do
-        if not raidCreateEnabled then continue end
-        if isInRaidServer() then continue end
+        if not raidCreateEnabled then
+            raidCreationStep = 0
+            raidTicketExtracted = false
+            continue
+        end
+        if isInRaidServer() then
+            raidCreationStep = 0
+            raidTicketExtracted = false
+            continue
+        end
 
         pcall(function()
             local itemName = nil
@@ -2385,52 +2483,138 @@ task.spawn(function()
 
             if not itemName then return end
 
-            -- Step 1: Extract item from inventory
-            extractRaidItem(itemName)
-            task.wait(1)
+            -- Step 0: Extract item (ONE TIME)
+            if raidCreationStep == 0 then
+                if not raidTicketExtracted then
+                    local extracted = extractRaidItem(itemName)
+                    if extracted then
+                        raidTicketExtracted = true
+                        raidCreationStep = 1
+                        print("[RAID] " .. itemName .. " extracted")
+                    end
+                else
+                    raidCreationStep = 1
+                end
+            end
 
-            -- Step 2: Interact with spawner
-            interactRaidSpawner(selectedRaidType)
-            task.wait(1)
+            -- Step 1: Interact with spawner (teleport near + interact)
+            if raidCreationStep == 1 then
+                interactRaidSpawner(selectedRaidType)
+                raidCreationStep = 2
+                print("[RAID] Spawner interacted")
+            end
 
-            -- Step 3: Teleport to raid circle
-            teleportToRaid(selectedRaidType)
+            -- Step 2: Teleport to raid circle
+            if raidCreationStep == 2 then
+                teleportToRaid(selectedRaidType)
+                raidCreationStep = 3
+                print("[RAID] Teleported to raid circle")
+            end
+
+            -- Step 3: Done, reset after delay
+            if raidCreationStep == 3 then
+                task.wait(5)
+                raidCreationStep = 0
+                raidTicketExtracted = false
+            end
         end)
     end
 end)
 
--- Cave Raid Creation Loop
+-- Cave Raid Creation Loop (STEP-BASED, ONE-TIME extraction)
 task.spawn(function()
     while task.wait(2) do
-        if not caveRaidCreateEnabled then continue end
-        if isInRaidServer() then continue end
+        if not caveRaidCreateEnabled then
+            caveRaidCreationStep = 0
+            caveOreExtracted = false
+            continue
+        end
+        if isInRaidServer() then
+            caveRaidCreationStep = 0
+            caveOreExtracted = false
+            continue
+        end
 
         pcall(function()
-            -- Step 1: Extract Diamond Ore from inventory
-            extractRaidItem("Diamond Ore")
-            task.wait(1)
+            -- Step 0: Extract Diamond Ore (ONE TIME)
+            if caveRaidCreationStep == 0 then
+                if not caveOreExtracted then
+                    local extracted = extractRaidItem("Diamond Ore")
+                    if extracted then
+                        caveOreExtracted = true
+                        caveRaidCreationStep = 1
+                        print("[CAVE RAID] Diamond Ore extracted")
+                    end
+                else
+                    caveRaidCreationStep = 1
+                end
+            end
 
-            -- Step 2: Interact with Cave Raid spawner
-            interactRaidSpawner("Cave Raid")
-            task.wait(1)
+            -- Step 1: Interact with Cave Raid spawner
+            if caveRaidCreationStep == 1 then
+                interactRaidSpawner("Cave Raid")
+                caveRaidCreationStep = 2
+                print("[CAVE RAID] Spawner interacted")
+            end
 
-            -- Step 3: Teleport to Cave Raid circle
-            teleportToRaid("Cave Raid")
+            -- Step 2: Teleport to Cave Raid circle
+            if caveRaidCreationStep == 2 then
+                teleportToRaid("Cave Raid")
+                caveRaidCreationStep = 3
+                print("[CAVE RAID] Teleported to raid circle")
+            end
+
+            -- Step 3: Done, reset after delay
+            if caveRaidCreationStep == 3 then
+                task.wait(5)
+                caveRaidCreationStep = 0
+                caveOreExtracted = false
+            end
         end)
     end
 end)
 
--- Diamond Ore Farm Loop
+-- Cave Diamond Ore Farm (Buy Pickaxe -> Equip -> Farm)
 task.spawn(function()
+    local hasPickaxe = false
     while task.wait(0.3) do
         if not caveDiamondOreFarmEnabled then continue end
         if isInRaidServer() then continue end
 
         pcall(function()
+            -- Step 1: Buy Super Pickaxe from NPC if not owned
+            if not hasPickaxe then
+                local npc = workspace:FindFirstChild("NPC")
+                if npc and npc:FindFirstChild("SuperPickaxeNPC") then
+                    local head = npc.SuperPickaxeNPC:FindFirstChild("Head")
+                    if head then
+                        local clickGui = head:FindFirstChild("ClickGUI")
+                        if clickGui then
+                            local gui = clickGui:FindFirstChild("GUI")
+                            if gui then
+                                local imgBtn = gui:FindFirstChild("ImageButton")
+                                if imgBtn then
+                                    local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                                    if hrp then
+                                        hrp.CFrame = head.CFrame * CFrame.new(0, 0, 5)
+                                        task.wait(0.5)
+                                        robustClick(imgBtn)
+                                        task.wait(1)
+                                        hasPickaxe = true
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+
+            -- Step 2: Equip Super Pickaxe
             if caveSuperPickaxeAutoEquip and caveSuperPickaxeTool then
                 forceEquipTool(caveSuperPickaxeTool)
             end
 
+            -- Step 3: Farm Super Ore
             local superOre = workspace:FindFirstChild("Mobs")
             if superOre and superOre:FindFirstChild("Cave Island") then
                 local caveIsland = superOre["Cave Island"]
@@ -2443,9 +2627,7 @@ task.spawn(function()
                         local tool = LocalPlayer.Character:FindFirstChild(caveSuperPickaxeTool or "")
                         if tool then
                             pcall(function()
-                                if firesignal then
-                                    firesignal(tool.Activated)
-                                end
+                                tool:Activate()
                             end)
                         end
                     end
@@ -2564,9 +2746,6 @@ task.spawn(function()
     end
 end)
 
--- Boss manager, steps manager, and other systems remain...
--- [OMISSIS FOR BREVITY IN RESPONSE - REMAINDER OF SCRIPT UNCHANGED]
-
 -- Boss attack
 task.spawn(function()
     while task.wait(0.2) do
@@ -2632,6 +2811,8 @@ LocalPlayer.CharacterAdded:Connect(function()
     stepsCompleted=false; step2FActivated=false
     isExecutingSteps=false; STEPS_IN_PROGRESS=false
     alreadyAtEventIsland=false
+    raidTicketExtracted=false; caveOreExtracted=false
+    raidCreationStep=0; caveRaidCreationStep=0
 
     if oceanMobsEnabled and oceanAutoEquip and oceanAutoEquipTool then
         forceEquipTool(oceanAutoEquipTool)
