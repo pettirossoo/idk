@@ -137,6 +137,7 @@ local raidTicketExtracted = false
 local caveOreExtracted = false
 local raidCreationStep = 0 -- 0=idle, 1=extracted, 2=interacted, 3=teleported
 local caveRaidCreationStep = 0
+local raidExtractionInProgress = false
 
 -- ================================================
 -- SECTION 2: HELPER FUNCTIONS
@@ -279,8 +280,7 @@ local function getRaidShopItems(shopName)
         local shop = g:FindFirstChild(shopName)
         if shop and shop:FindFirstChild("Main") then
             for _,c in pairs(shop.Main:GetChildren()) do
-                if (c:IsA("Frame") or c:IsA("TextButton"))
-                and c:FindFirstChild("BuyButton") and c:FindFirstChild("Stocks")
+                if c:IsA("ImageButton")
                 and c.Name~="UIGridLayout" and c.Name~="UIPadding" then
                     table.insert(items, c.Name)
                 end
@@ -1848,6 +1848,7 @@ end
 -- Extract item from InvFrame (ONE TIME only)
 local function extractRaidItem(itemName)
     local success = false
+    raidExtractionInProgress = true
     pcall(function()
         -- Check if already in backpack/character
         if LocalPlayer.Backpack:FindFirstChild(itemName) then success = true; return end
@@ -1863,13 +1864,15 @@ local function extractRaidItem(itemName)
         if not item then return end
         local btn = item:FindFirstChild("Button")
         if btn and btn:IsA("TextButton") then
-            raidExtractionInProgress = true
             robustClick(btn)
-            task.wait(0.5)
-            raidExtractionInProgress = false
-            success = true
+            task.wait(1) -- Wait for extraction to complete
+            -- Verify it worked
+            if LocalPlayer.Backpack:FindFirstChild(itemName) or LocalPlayer.Character:FindFirstChild(itemName) then
+                success = true
+            end
         end
     end)
+    raidExtractionInProgress = false
     return success
 end
 
@@ -1898,7 +1901,8 @@ local function interactRaidSpawner(raidType)
             if npc and npc:FindFirstChild("BossRushNPC") then
                 local hrpNPC = npc.BossRushNPC:FindFirstChild("HumanoidRootPart")
                 if hrpNPC and hrpNPC:IsA("BasePart") then
-                    hrp.CFrame = hrpNPC.CFrame * CFrame.new(0, 3, 5)
+                    -- Teleport in front of NPC, looking at it
+                    hrp.CFrame = CFrame.new(hrpNPC.Position + hrpNPC.CFrame.LookVector * 6 + Vector3.new(0, 2, 0), hrpNPC.Position)
                     task.wait(0.5)
                     local clickGui = hrpNPC:FindFirstChild("ClickGUI")
                     if clickGui then
@@ -1915,7 +1919,8 @@ local function interactRaidSpawner(raidType)
             if npc and npc:FindFirstChild("TowerRaidSummon") then
                 local hrpNPC = npc.TowerRaidSummon:FindFirstChild("HumanoidRootPart")
                 if hrpNPC and hrpNPC:IsA("BasePart") then
-                    hrp.CFrame = hrpNPC.CFrame * CFrame.new(0, 3, 5)
+                    -- Teleport in front of NPC, looking at it
+                    hrp.CFrame = CFrame.new(hrpNPC.Position + hrpNPC.CFrame.LookVector * 6 + Vector3.new(0, 2, 0), hrpNPC.Position)
                     task.wait(0.5)
                     local clickGui = hrpNPC:FindFirstChild("ClickGUI")
                     if clickGui then
@@ -1932,7 +1937,8 @@ local function interactRaidSpawner(raidType)
             if npc and npc:FindFirstChild("CaveRaidNPC") then
                 local hrpNPC = npc.CaveRaidNPC:FindFirstChild("HumanoidRootPart")
                 if hrpNPC and hrpNPC:IsA("BasePart") then
-                    hrp.CFrame = hrpNPC.CFrame * CFrame.new(0, 3, 5)
+                    -- Teleport in front of NPC, looking at it
+                    hrp.CFrame = CFrame.new(hrpNPC.Position + hrpNPC.CFrame.LookVector * 6 + Vector3.new(0, 2, 0), hrpNPC.Position)
                     task.wait(0.5)
                     local clickGui = hrpNPC:FindFirstChild("ClickGUI")
                     if clickGui then
@@ -1971,7 +1977,7 @@ local function teleportToRaid(raidType)
     end)
 end
 
--- AutoSkip: OFF.Enabled=true means skip is OFF in game -> need to click to turn ON
+-- AutoSkip: check direct children OFF/ON UIGradient
 local function autoSkipRaid()
     pcall(function()
         local raidGui = LocalPlayer.PlayerGui:FindFirstChild("Raid")
@@ -1979,29 +1985,18 @@ local function autoSkipRaid()
         local autoSkip = raidGui:FindFirstChild("AutoSkip")
         if not autoSkip then return end
 
-        -- Check OFF gradient (if enabled = skip is OFF in game)
-        local offGradient = nil
-        for _, child in pairs(autoSkip:GetDescendants()) do
-            if child.Name == "OFF" and child:IsA("UIGradient") then
-                offGradient = child
-                break
-            end
-        end
+        -- Find direct children OFF/ON UIGradient
+        local offGradient = autoSkip:FindFirstChild("OFF")
+        local onGradient = autoSkip:FindFirstChild("ON")
 
-        if offGradient and offGradient.Enabled then
+        if offGradient and offGradient:IsA("UIGradient") and offGradient.Enabled then
             -- Skip is OFF, need to click to turn ON
-            local buttons = {}
-            if autoSkip:IsA("TextButton") or autoSkip:IsA("ImageButton") then
-                table.insert(buttons, autoSkip)
-            end
-            for _, v in pairs(autoSkip:GetDescendants()) do
-                if v:IsA("TextButton") or v:IsA("ImageButton") then
-                    table.insert(buttons, v)
-                end
-            end
-            for _, btn in pairs(buttons) do
-                robustClick(btn)
-            end
+            robustClick(autoSkip)
+        elseif onGradient and onGradient:IsA("UIGradient") and onGradient.Enabled then
+            -- Skip is already ON, do nothing
+        else
+            -- Fallback: try clicking anyway
+            robustClick(autoSkip)
         end
     end)
 end
@@ -2015,19 +2010,7 @@ local function startRaid()
         if not startBtn then return end
 
         if startBtn.Visible == false then return end
-
-        local buttons = {}
-        if startBtn:IsA("TextButton") or startBtn:IsA("ImageButton") then
-            table.insert(buttons, startBtn)
-        end
-        for _, v in pairs(startBtn:GetDescendants()) do
-            if v:IsA("TextButton") or v:IsA("ImageButton") then
-                table.insert(buttons, v)
-            end
-        end
-        for _, btn in pairs(buttons) do
-            robustClick(btn)
-        end
+        robustClick(startBtn)
     end)
 end
 
@@ -2040,19 +2023,7 @@ local function replayRaid()
         if not replayBtn then return end
 
         if replayBtn.Visible == false then return end
-
-        local buttons = {}
-        if replayBtn:IsA("TextButton") or replayBtn:IsA("ImageButton") then
-            table.insert(buttons, replayBtn)
-        end
-        for _, v in pairs(replayBtn:GetDescendants()) do
-            if v:IsA("TextButton") or v:IsA("ImageButton") then
-                table.insert(buttons, v)
-            end
-        end
-        for _, btn in pairs(buttons) do
-            robustClick(btn)
-        end
+        robustClick(replayBtn)
     end)
 end
 
@@ -2066,10 +2037,14 @@ local function buyRaidShopItems(shopName, selectedItems)
 
         for _, itemName in pairs(selectedItems) do
             local f = shop.Main:FindFirstChild(itemName)
-            if f and f:FindFirstChild("Stocks") and f:FindFirstChild("BuyButton") then
-                local s = f.Stocks.Text:match("(%d+)")
-                if s and tonumber(s) > 0 then
-                    robustClick(f.BuyButton)
+            if f and f:IsA("ImageButton") then
+                local buyBtn = nil
+                local frame = f:FindFirstChild("Frame")
+                if frame then
+                    buyBtn = frame:FindFirstChild("Buy") or frame:FindFirstChild("BuyButton")
+                end
+                if buyBtn then
+                    robustClick(buyBtn)
                     task.wait(0.3)
                 end
             end
@@ -2511,11 +2486,9 @@ task.spawn(function()
                 print("[RAID] Teleported to raid circle")
             end
 
-            -- Step 3: Done, reset after delay
+            -- Step 3: Done, do not reset until toggle is turned off
             if raidCreationStep == 3 then
                 task.wait(5)
-                raidCreationStep = 0
-                raidTicketExtracted = false
             end
         end)
     end
@@ -2564,11 +2537,9 @@ task.spawn(function()
                 print("[CAVE RAID] Teleported to raid circle")
             end
 
-            -- Step 3: Done, reset after delay
+            -- Step 3: Done, do not reset until toggle is turned off
             if caveRaidCreationStep == 3 then
                 task.wait(5)
-                caveRaidCreationStep = 0
-                caveOreExtracted = false
             end
         end)
     end
@@ -2576,13 +2547,15 @@ end)
 
 -- Cave Diamond Ore Farm (Buy Pickaxe -> Equip -> Farm)
 task.spawn(function()
-    local hasPickaxe = false
     while task.wait(0.3) do
         if not caveDiamondOreFarmEnabled then continue end
         if isInRaidServer() then continue end
 
         pcall(function()
-            -- Step 1: Buy Super Pickaxe from NPC if not owned
+            -- Check if we already have Super Pickaxe
+            local hasPickaxe = LocalPlayer.Backpack:FindFirstChild("Super Pickaxe") or LocalPlayer.Character:FindFirstChild("Super Pickaxe")
+
+            -- Step 1: Get Super Pickaxe from NPC if not owned
             if not hasPickaxe then
                 local npc = workspace:FindFirstChild("NPC")
                 if npc and npc:FindFirstChild("SuperPickaxeNPC") then
@@ -2596,11 +2569,11 @@ task.spawn(function()
                                 if imgBtn then
                                     local hrp = LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
                                     if hrp then
-                                        hrp.CFrame = head.CFrame * CFrame.new(0, 0, 5)
+                                        -- Teleport in front of NPC head, looking at it
+                                        hrp.CFrame = CFrame.new(head.Position + head.CFrame.LookVector * 5 + Vector3.new(0, 2, 0), head.Position)
                                         task.wait(0.5)
                                         robustClick(imgBtn)
                                         task.wait(1)
-                                        hasPickaxe = true
                                     end
                                 end
                             end
